@@ -1799,6 +1799,12 @@ class HoraeManager {
         let processed = 0;
         let skipped = 0;
 
+        // 需要在覆写 meta 时保留的全局/摘要相关字段
+        const PRESERVE_KEYS = [
+            'autoSummaries', 'customTables', 'globalTableData',
+            'locationMemory', 'relationships', 'tableContributions'
+        ];
+
         for (let i = 0; i < chat.length; i++) {
             const message = chat[i];
             
@@ -1824,15 +1830,28 @@ class HoraeManager {
                 continue;
             }
 
+            // 保留已有 meta 上的全局数据和事件标记
+            const existing = message.horae_meta;
+            const preserved = {};
+            if (existing) {
+                for (const key of PRESERVE_KEYS) {
+                    if (existing[key] !== undefined) preserved[key] = existing[key];
+                }
+                // 保留事件上的摘要标记（_compressedBy / _summaryId）
+                if (existing.events?.length > 0) preserved._existingEvents = existing.events;
+            }
+
             const parsed = this.parseHoraeTag(message.mes);
             
             if (parsed) {
                 const meta = this.mergeParsedToMeta(null, parsed);
-                // 记录表格贡献
                 if (meta._tableUpdates) {
                     meta.tableContributions = meta._tableUpdates;
                     delete meta._tableUpdates;
                 }
+                // 恢复保留字段
+                Object.assign(meta, preserved);
+                delete meta._existingEvents;
                 this.setMessageMeta(i, meta);
                 processed++;
             } else if (analyzeCallback) {
@@ -1844,6 +1863,8 @@ class HoraeManager {
                             meta.tableContributions = meta._tableUpdates;
                             delete meta._tableUpdates;
                         }
+                        Object.assign(meta, preserved);
+                        delete meta._existingEvents;
                         this.setMessageMeta(i, meta);
                         processed++;
                     }
@@ -1852,6 +1873,8 @@ class HoraeManager {
                 }
             } else {
                 const meta = createEmptyMeta();
+                Object.assign(meta, preserved);
+                delete meta._existingEvents;
                 this.setMessageMeta(i, meta);
                 processed++;
             }

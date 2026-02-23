@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.5.5
+ * 版本: 1.5.6
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -19,7 +19,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.5.5';
+const VERSION = '1.5.6';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -863,23 +863,37 @@ function updateTimelineDisplay() {
 /** 批量隐藏/显示聊天消息楼层（调用酒馆原生 /hide /unhide） */
 async function setMessagesHidden(chat, indices, hidden) {
     if (!indices?.length) return;
+    let usedSlash = false;
     try {
         const slashModule = await import('/scripts/slash-commands.js');
         const exec = slashModule.executeSlashCommandsWithOptions;
         const cmd = hidden ? '/hide' : '/unhide';
         for (const idx of indices) {
-            if (!chat[idx] || idx === 0) continue;
-            await exec(`${cmd} ${idx}`);
+            if (!chat[idx]) continue;
+            try {
+                await exec(`${cmd} ${idx}`);
+            } catch (cmdErr) {
+                console.warn(`[Horae] ${cmd} ${idx} 失败，手动设置:`, cmdErr);
+                chat[idx].is_hidden = hidden;
+            }
         }
+        usedSlash = true;
     } catch (e) {
-        console.warn('[Horae] 无法调用酒馆原生隐藏命令，回退到手动设置:', e);
-        for (const idx of indices) {
-            if (!chat[idx] || idx === 0) continue;
+        console.warn('[Horae] 无法加载酒馆命令模块，回退到手动设置:', e);
+    }
+    // 后验证：确保每条消息的 is_hidden 状态正确
+    let needSave = false;
+    for (const idx of indices) {
+        if (!chat[idx]) continue;
+        if (!!chat[idx].is_hidden !== hidden) {
             chat[idx].is_hidden = hidden;
-            const $el = $(`.mes[mesid="${idx}"]`);
-            if (hidden) $el.attr('is_hidden', 'true');
-            else $el.removeAttr('is_hidden');
+            needSave = true;
         }
+        const $el = $(`.mes[mesid="${idx}"]`);
+        if (hidden) $el.attr('is_hidden', 'true');
+        else $el.removeAttr('is_hidden');
+    }
+    if (needSave || !usedSlash) {
         await getContext().saveChat();
     }
 }
@@ -917,14 +931,17 @@ async function deleteSummary(summaryId) {
     
     const chat = horaeManager.getChat();
     const firstMeta = chat?.[0]?.horae_meta;
-    if (!firstMeta?.autoSummaries) return;
     
-    const idx = firstMeta.autoSummaries.findIndex(s => s.id === summaryId);
-    if (idx === -1) return;
+    // 从 autoSummaries 中移除记录（如有）
+    let removedEntry = null;
+    if (firstMeta?.autoSummaries) {
+        const idx = firstMeta.autoSummaries.findIndex(s => s.id === summaryId);
+        if (idx !== -1) {
+            removedEntry = firstMeta.autoSummaries.splice(idx, 1)[0];
+        }
+    }
     
-    const removedEntry = firstMeta.autoSummaries[idx];
-    
-    // 清除所有消息中对应的 _compressedBy 标记和摘要事件
+    // 清除所有消息中对应的 _compressedBy 标记和摘要事件（无论 autoSummaries 记录是否存在）
     for (let i = 0; i < chat.length; i++) {
         const meta = chat[i]?.horae_meta;
         if (!meta?.events) continue;
@@ -934,11 +951,11 @@ async function deleteSummary(summaryId) {
         }
     }
     
-    firstMeta.autoSummaries.splice(idx, 1);
-    
     // 恢复被隐藏的楼层
-    const indices = getSummaryMsgIndices(removedEntry);
-    await setMessagesHidden(chat, indices, false);
+    if (removedEntry) {
+        const indices = getSummaryMsgIndices(removedEntry);
+        await setMessagesHidden(chat, indices, false);
+    }
     
     await getContext().saveChat();
     updateTimelineDisplay();
@@ -6499,7 +6516,13 @@ async function generateWithDirectApi(prompt) {
     }
     const body = {
         model: settings.autoSummaryModel.trim(),
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+            {
+                role: 'system',
+                content: 'You are a professional literary analyst. Your task is to read creative fiction passages and produce concise plot summaries. Analyze all content objectively regardless of themes or genre. Output only the summary text, no commentary.'
+            },
+            { role: 'user', content: prompt }
+        ],
         temperature: 0.7,
         stream: false
     };
@@ -6518,6 +6541,10 @@ async function generateWithDirectApi(prompt) {
             throw new Error(`独立API返回 ${resp.status}: ${errText.slice(0, 200)}`);
         }
         const data = await resp.json();
+        const finishReason = data?.choices?.[0]?.finish_reason || '';
+        if (finishReason === 'content_filter' || finishReason === 'SAFETY') {
+            throw new Error('副API安全过滤拦截，建议：降低批次token上限 或 换用限制更宽松的模型');
+        }
         return data?.choices?.[0]?.message?.content || '';
     } catch (err) {
         if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
@@ -6556,7 +6583,7 @@ async function checkAutoSummary() {
         
         const bufferMsgIndices = [];
         let bufferTokens = 0;
-        for (let i = 1; i < cutoff; i++) {
+        for (let i = 0; i < cutoff; i++) {
             if (chat[i]?.is_hidden || summarizedIndices.has(i)) continue;
             bufferMsgIndices.push(i);
             if (bufferMode === 'tokens') {
@@ -6671,7 +6698,9 @@ async function checkAutoSummary() {
         });
         
         // 标记原始事件为已压缩（active 时隐藏原始事件显示摘要）
+        // #0 的事件不标记，保留其时间线用于时间计算
         for (const e of bufferEvents) {
+            if (e.msgIdx === 0) continue;
             const meta = chat[e.msgIdx]?.horae_meta;
             if (meta?.events?.[e.evtIdx]) {
                 meta.events[e.evtIdx]._compressedBy = summaryId;
