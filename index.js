@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.6.3
+ * 版本: 1.6.4
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -19,7 +19,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.6.3';
+const VERSION = '1.6.4';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -7481,6 +7481,7 @@ async function checkAutoSummary() {
         let bufferTokens = 0;
         for (let i = 0; i < cutoff; i++) {
             if (chat[i]?.is_hidden || summarizedIndices.has(i)) continue;
+            if (!chat[i]?.is_user && isEmptyOrCodeLayer(chat[i]?.mes)) continue;
             bufferMsgIndices.push(i);
             if (bufferMode === 'tokens') {
                 bufferTokens += estimateTokens(chat[i]?.mes || '');
@@ -7735,6 +7736,17 @@ function estimateTokens(text) {
     return Math.ceil(cjk * 1.5 + rest * 0.4);
 }
 
+/** 判断消息是否为空层（同层系统等代码渲染的无实际叙事内容楼层） */
+function isEmptyOrCodeLayer(mes) {
+    if (!mes) return true;
+    const stripped = mes
+        .replace(/<[^>]*>/g, '')
+        .replace(/\{\{[^}]*\}\}/g, '')
+        .replace(/```[\s\S]*?```/g, '')
+        .trim();
+    return stripped.length < 20;
+}
+
 /** AI智能摘要 — 批量分析历史消息，暂存结果后弹出审阅视窗 */
 async function batchAIScan() {
     const chat = horaeManager.getChat();
@@ -7744,16 +7756,19 @@ async function batchAIScan() {
     }
 
     const targets = [];
+    let skippedEmpty = 0;
     for (let i = 0; i < chat.length; i++) {
         const msg = chat[i];
-        if (msg.is_user || !msg.mes || msg.mes.trim().length < 20) continue;
+        if (msg.is_user) continue;
+        if (isEmptyOrCodeLayer(msg.mes)) { skippedEmpty++; continue; }
         const meta = msg.horae_meta;
-        if (meta?.events?.length > 0 && !meta?._aiScanned) continue;
+        if (meta?.events?.length > 0) continue;
         targets.push({ index: i, text: msg.mes });
     }
 
     if (targets.length === 0) {
-        showToast('所有消息已有记忆数据，无需扫描', 'info');
+        const hint = skippedEmpty > 0 ? `（已跳过 ${skippedEmpty} 条空层/代码渲染楼层）` : '';
+        showToast(`所有消息已有时间线数据，无需补充${hint}`, 'info');
         return;
     }
 
@@ -7775,7 +7790,8 @@ async function batchAIScan() {
     }
     if (currentBatch.length > 0) batches.push(currentBatch);
 
-    const confirmMsg = `预计分 ${batches.length} 批处理，消耗 ${batches.length} 次生成\n\n· 再次扫描会覆盖上次的AI摘要结果\n· 扫描后可「撤销摘要」还原\n\n是否继续？`;
+    const skippedHint = skippedEmpty > 0 ? `\n· 已跳过 ${skippedEmpty} 条空层/代码渲染楼层` : '';
+    const confirmMsg = `预计分 ${batches.length} 批处理，消耗 ${batches.length} 次生成\n\n· 仅补充尚无时间线的消息，不覆盖已有数据\n· 中途取消会保留已完成的批次\n· 扫描后可「撤销摘要」还原${skippedHint}\n\n是否继续？`;
     if (!confirm(confirmMsg)) return;
 
     const scanResults = await executeBatchScan(batches, { includeNpc, includeAffection, includeScene, includeRelationship });
@@ -7829,13 +7845,17 @@ async function executeBatchScan(batches, options = {}) {
     // 取消：中止fetch请求 + stopGeneration + Promise.race跳出
     overlay.querySelector('.horae-progress-cancel').addEventListener('click', () => {
         if (cancelled) return;
-        if (!confirm('取消后已完成的摘要将不会保存，确定取消？')) return;
+        const hasPartial = scanResults.length > 0;
+        const hint = hasPartial
+            ? `已完成 ${scanResults.length} 条摘要将保留，可在审阅弹窗中查看。\n\n确定停止后续批次？`
+            : '当前批次尚未完成，确定取消？';
+        if (!confirm(hint)) return;
         cancelled = true;
         fetchAbort.abort();
         try { context.stopGeneration(); } catch (_) {}
         cancelResolve();
         overlay.remove();
-        showToast('已取消摘要生成', 'info');
+        showToast(hasPartial ? `已停止，保留 ${scanResults.length} 条已完成摘要` : '已取消摘要生成', 'info');
     });
     const scanResults = [];
 
@@ -7968,10 +7988,9 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
             ]);
         }
     }
-    // 恢复原生fetch
     window.fetch = _origFetch;
     if (!cancelled) overlay.remove();
-    return cancelled ? [] : scanResults;
+    return scanResults;
 }
 
 /** 从暂存结果中按分类提取审阅条目 */
@@ -8223,7 +8242,7 @@ function showScanReviewModal(scanResults, scanOptions) {
     });
 
     // 取消
-    const closeModal = () => { if (confirm('取消将丢弃所有摘要结果，是否继续？')) modal.remove(); };
+    const closeModal = () => { if (confirm('关闭审阅弹窗？未保存的摘要将丢失。\n（下次可重新运行「AI智能摘要」继续补充）')) modal.remove(); };
     modal.querySelector('#horae-review-cancel').addEventListener('click', closeModal);
     modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
 
@@ -8318,7 +8337,7 @@ function showAIScanConfigDialog(targetCount) {
                 </div>
                 <div class="horae-modal-body" style="padding: 16px;">
                     <p style="margin: 0 0 12px; color: var(--horae-text-muted); font-size: 13px;">
-                        检测到 <strong style="color: var(--horae-primary-light);">${targetCount}</strong> 条待分析消息
+                        检测到 <strong style="color: var(--horae-primary-light);">${targetCount}</strong> 条尚无时间线的消息（已有时间线的楼层自动跳过）
                     </p>
                     <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--horae-text);">
                         每批 Token 上限
