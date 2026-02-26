@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.7.0
+ * 版本: 1.7.1
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -20,7 +20,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.7.0';
+const VERSION = '1.7.1';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -130,8 +130,13 @@ const DEFAULT_SETTINGS = {
     tutorialCompleted: false,       // 新用户导航教学是否已完成
     // 向量记忆
     vectorEnabled: false,
+    vectorSource: 'local',             // 'local' = 本地模型, 'api' = 远程 API
     vectorModel: 'Xenova/bge-small-zh-v1.5',
     vectorDtype: 'q8',
+    vectorApiUrl: '',                  // OpenAI 兼容 embedding API 地址
+    vectorApiKey: '',                  // API 密钥
+    vectorApiModel: '',                // 远程 embedding 模型名称
+    vectorPureMode: false,             // 纯向量模式（强模型优化，关闭关键词启发式）
     vectorTopK: 5,
     vectorThreshold: 0.72,
     vectorFullTextCount: 3,
@@ -585,6 +590,30 @@ function importTable(file) {
                 data: tableData.data || {},
                 prompt: tableData.prompt || ''
             };
+            
+            // 设置 baseData 为完整导入数据，防止 rebuildTableData 时丢失
+            newTable.baseData = JSON.parse(JSON.stringify(newTable.data));
+            newTable.baseRows = newTable.rows;
+            newTable.baseCols = newTable.cols;
+            
+            // 清除同名表格的旧 AI 贡献记录，防止 rebuild 时旧数据回流
+            const importName = (newTable.name || '').trim();
+            if (importName) {
+                const chat = horaeManager.getChat();
+                if (chat?.length) {
+                    for (let i = 0; i < chat.length; i++) {
+                        const meta = chat[i]?.horae_meta;
+                        if (meta?.tableContributions) {
+                            meta.tableContributions = meta.tableContributions.filter(
+                                tc => (tc.name || '').trim() !== importName
+                            );
+                            if (meta.tableContributions.length === 0) {
+                                delete meta.tableContributions;
+                            }
+                        }
+                    }
+                }
+            }
             
             const tables = getChatTables();
             tables.push(newTable);
@@ -3899,63 +3928,37 @@ function deleteCustomTable(index, scope = 'local') {
     showToast('表格已删除', 'info');
 }
 
-/** 清除指定表格的所有 tableContributions，并在当前消息记录用户编辑快照 */
+/** 清除指定表格的所有 tableContributions，将当前数据写入 baseData 作为新基准 */
 function purgeTableContributions(tableName, scope = 'local') {
     if (!tableName) return;
     const chat = horaeManager.getChat();
     if (!chat?.length) return;
 
-    // 收集当前完整数据快照（数据单元格 r>=1, c>=1）
+    // 清除所有消息中该表格的全部 tableContributions（AI 贡献 + 旧用户快照一并清除）
+    for (let i = 0; i < chat.length; i++) {
+        const meta = chat[i]?.horae_meta;
+        if (meta?.tableContributions) {
+            meta.tableContributions = meta.tableContributions.filter(
+                tc => (tc.name || '').trim() !== tableName
+            );
+            if (meta.tableContributions.length === 0) {
+                delete meta.tableContributions;
+            }
+        }
+    }
+
+    // 将当前完整数据（含用户编辑）写入 baseData 作为新基准
+    // 这样即使消息被滑动/重新生成，rebuildTableData 也能从正确的基准恢复
     const tables = getTablesByScope(scope);
     const table = tables.find(t => (t.name || '').trim() === tableName);
-    const snapshot = {};
-    if (table?.data) {
-        for (const [key, val] of Object.entries(table.data)) {
-            const [r, c] = key.split('-').map(Number);
-            if (r >= 1 && c >= 1 && val) snapshot[key] = val;
-        }
-    }
-
-    // 在最后一条消息上记录用户编辑快照（替换同一消息上旧的同名快照）
-    const lastIdx = chat.length - 1;
-    if (lastIdx >= 0) {
-        const lastMsg = chat[lastIdx];
-        if (lastMsg?.horae_meta?.tableContributions) {
-            lastMsg.horae_meta.tableContributions = lastMsg.horae_meta.tableContributions.filter(
-                tc => !((tc.name || '').trim() === tableName && tc._isUserEdit)
-            );
-        }
-    }
-    if (lastIdx >= 0 && Object.keys(snapshot).length > 0) {
-        const lastMsg = chat[lastIdx];
-        if (!lastMsg.horae_meta) lastMsg.horae_meta = createEmptyMeta();
-        if (!lastMsg.horae_meta.tableContributions) lastMsg.horae_meta.tableContributions = [];
-        lastMsg.horae_meta.tableContributions.push({
-            name: tableName,
-            updates: snapshot,
-            _isUserEdit: true
-        });
-    }
-
-    // 同步 baseData（header + 结构，仅保留表头，不含数据单元格）
     if (table) {
-        const headerOnly = {};
-        for (const [key, val] of Object.entries(table.data || {})) {
-            const [r, c] = key.split('-').map(Number);
-            if (r === 0 || c === 0) headerOnly[key] = val;
-        }
-        table.baseData = headerOnly;
+        table.baseData = JSON.parse(JSON.stringify(table.data || {}));
         table.baseRows = table.rows;
         table.baseCols = table.cols;
     }
     if (scope === 'global' && chat[0]?.horae_meta?.globalTableData?.[tableName]) {
         const overlay = chat[0].horae_meta.globalTableData[tableName];
-        const headerOnly = {};
-        for (const [key, val] of Object.entries(overlay.data || {})) {
-            const [r, c] = key.split('-').map(Number);
-            if (r === 0 || c === 0) headerOnly[key] = val;
-        }
-        overlay.baseData = headerOnly;
+        overlay.baseData = JSON.parse(JSON.stringify(overlay.data || {}));
         overlay.baseRows = overlay.rows;
         overlay.baseCols = overlay.cols;
     }
@@ -7005,6 +7008,18 @@ function initSettingsEvents() {
         }
     });
 
+    $('#horae-setting-vector-source').on('change', function() {
+        settings.vectorSource = this.value;
+        saveSettings();
+        _syncVectorSourceUI();
+        if (settings.vectorEnabled) {
+            vectorManager.clearIndex().then(() => {
+                showToast('向量来源已切换，索引已清除，正在加载...', 'info');
+                _initVectorModel();
+            });
+        }
+    });
+
     $('#horae-setting-vector-model').on('change', function() {
         settings.vectorModel = this.value;
         saveSettings();
@@ -7025,6 +7040,32 @@ function initSettingsEvents() {
                 _initVectorModel();
             });
         }
+    });
+
+    $('#horae-setting-vector-api-url').on('change', function() {
+        settings.vectorApiUrl = this.value.trim();
+        saveSettings();
+    });
+
+    $('#horae-setting-vector-api-key').on('change', function() {
+        settings.vectorApiKey = this.value.trim();
+        saveSettings();
+    });
+
+    $('#horae-setting-vector-api-model').on('change', function() {
+        settings.vectorApiModel = this.value.trim();
+        saveSettings();
+        if (settings.vectorEnabled && settings.vectorSource === 'api') {
+            vectorManager.clearIndex().then(() => {
+                showToast('API 模型已更换，索引已清除，正在重新连接...', 'info');
+                _initVectorModel();
+            });
+        }
+    });
+
+    $('#horae-setting-vector-pure-mode').on('change', function() {
+        settings.vectorPureMode = this.checked;
+        saveSettings();
     });
 
     $('#horae-setting-vector-topk').on('change', function() {
@@ -7059,6 +7100,12 @@ function _refreshSystemPromptDisplay() {
     const def = horaeManager.getDefaultSystemPrompt();
     $('#horae-custom-system-prompt').val(def);
     $('#horae-system-prompt-count').text(def.length);
+}
+
+function _syncVectorSourceUI() {
+    const isApi = settings.vectorSource === 'api';
+    $('#horae-vector-local-options').toggle(!isApi);
+    $('#horae-vector-api-options').toggle(isApi);
 }
 
 function syncSettingsToUI() {
@@ -7148,12 +7195,18 @@ function syncSettingsToUI() {
     // 向量记忆
     $('#horae-setting-vector-enabled').prop('checked', !!settings.vectorEnabled);
     $('#horae-vector-options').toggle(!!settings.vectorEnabled);
+    $('#horae-setting-vector-source').val(settings.vectorSource || 'local');
     $('#horae-setting-vector-model').val(settings.vectorModel || 'Xenova/bge-small-zh-v1.5');
     $('#horae-setting-vector-dtype').val(settings.vectorDtype || 'q8');
+    $('#horae-setting-vector-api-url').val(settings.vectorApiUrl || '');
+    $('#horae-setting-vector-api-key').val(settings.vectorApiKey || '');
+    $('#horae-setting-vector-api-model').val(settings.vectorApiModel || '');
+    $('#horae-setting-vector-pure-mode').prop('checked', !!settings.vectorPureMode);
     $('#horae-setting-vector-topk').val(settings.vectorTopK || 5);
     $('#horae-setting-vector-threshold').val(settings.vectorThreshold || 0.72);
     $('#horae-setting-vector-fulltext-count').val(settings.vectorFullTextCount ?? 3);
     $('#horae-setting-vector-fulltext-threshold').val(settings.vectorFullTextThreshold ?? 0.9);
+    _syncVectorSourceUI();
     _updateVectorStatus();
 }
 
@@ -7175,7 +7228,11 @@ function _updateVectorStatus() {
     if (vectorManager.isLoading) {
         statusEl.textContent = '模型加载中...';
     } else if (vectorManager.isReady) {
-        statusEl.textContent = `✓ ${vectorManager.modelName.split('/').pop()} (${vectorManager.dimensions}维)`;
+        const dimText = vectorManager.dimensions ? ` (${vectorManager.dimensions}维)` : '';
+        const nameText = vectorManager.isApiMode
+            ? `API: ${vectorManager.modelName}`
+            : vectorManager.modelName.split('/').pop();
+        statusEl.textContent = `✓ ${nameText}${dimText}`;
     } else {
         statusEl.textContent = settings.vectorEnabled ? '模型未加载' : '已关闭';
     }
@@ -7194,26 +7251,39 @@ async function _initVectorModel() {
     if (progressEl) progressEl.style.display = 'block';
 
     try {
-        await vectorManager.initModel(
-            settings.vectorModel || 'Xenova/bge-small-zh-v1.5',
-            settings.vectorDtype || 'q8',
-            (info) => {
-                if (info.status === 'progress' && fillEl && textEl) {
-                    const pct = info.progress?.toFixed(0) || 0;
-                    fillEl.style.width = `${pct}%`;
-                    textEl.textContent = `下载模型... ${pct}%`;
-                } else if (info.status === 'done' && textEl) {
-                    textEl.textContent = '模型加载中...';
-                }
-                _updateVectorStatus();
+        if (settings.vectorSource === 'api') {
+            const apiUrl = settings.vectorApiUrl;
+            const apiKey = settings.vectorApiKey;
+            const apiModel = settings.vectorApiModel;
+            if (!apiUrl || !apiKey || !apiModel) {
+                throw new Error('请填写完整的 API 地址、密钥和模型名称');
             }
-        );
+            await vectorManager.initApi(apiUrl, apiKey, apiModel);
+        } else {
+            await vectorManager.initModel(
+                settings.vectorModel || 'Xenova/bge-small-zh-v1.5',
+                settings.vectorDtype || 'q8',
+                (info) => {
+                    if (info.status === 'progress' && fillEl && textEl) {
+                        const pct = info.progress?.toFixed(0) || 0;
+                        fillEl.style.width = `${pct}%`;
+                        textEl.textContent = `下载模型... ${pct}%`;
+                    } else if (info.status === 'done' && textEl) {
+                        textEl.textContent = '模型加载中...';
+                    }
+                    _updateVectorStatus();
+                }
+            );
+        }
 
         const ctx = getContext();
         const chatId = _deriveChatId(ctx);
         await vectorManager.loadChat(chatId, horaeManager.getChat());
 
-        showToast(`向量模型已加载: ${vectorManager.modelName.split('/').pop()}`, 'success');
+        const displayName = settings.vectorSource === 'api'
+            ? `API: ${settings.vectorApiModel}`
+            : vectorManager.modelName.split('/').pop();
+        showToast(`向量模型已加载: ${displayName}`, 'success');
     } catch (err) {
         console.error('[Horae] 向量模型加载失败:', err);
         showToast(`向量模型加载失败: ${err.message}`, 'error');

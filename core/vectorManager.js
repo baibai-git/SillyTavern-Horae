@@ -31,6 +31,8 @@ const TERM_CATEGORIES = {
     promise: ['承诺', '誓言', '约定', '保证', '发誓', '立誓', '契约', '盟约', '许诺', '约好', '守护', '效忠', '誓约'],
     loss: ['死亡', '去世', '牺牲', '离别', '分离', '告别', '失去', '消失', '陨落', '凋零', '永别', '丧失', '阵亡', '殉职', '送别', '诀别', '夭折'],
     power: ['觉醒', '升级', '进化', '突破', '衰退', '失去能力', '解封', '封印', '变身', '异变', '获得力量', '魔力', '能力', '天赋', '血脉', '继承', '传承', '修炼', '领悟'],
+    intimate: ['亲热', '缠绵', '情事', '春宵', '欢爱', '共度', '同床', '肌肤之亲', '亲密', '暧昧', '挑逗', '诱惑', '勾引', '撩拨', '调情', '情动', '动情', '欲望', '渴望', '贪恋', '索求', '迎合', '纠缠', '痴缠', '沉沦', '迷恋', '沉溺', '喘息', '颤抖', '呻吟', '娇喘', '低吟', '求饶', '失控', '隐忍', '克制', '放纵', '贪婪', '温存', '余韵', '缱绻', '旖旎', '性交', '内射', '颜射', '性行为', '中出', '射精', '性器', '交配', '野合', '欢爱', '高潮'],
+    body_contact: ['抚摸', '触碰', '贴近', '依偎', '搂抱', '吻', '啃咬', '舔', '吮', '摩挲', '揉捏', '按压', '握住', '牵手', '十指相扣', '额头相抵', '耳鬓厮磨', '脸红', '心跳', '身体', '肌肤', '锁骨', '脖颈', '耳垂', '嘴唇', '腰肢', '后背', '发丝', '指尖', '掌心'],
 };
 
 export class VectorManager {
@@ -41,8 +43,12 @@ export class VectorManager {
         this.vectors = new Map();
         this.isReady = false;
         this.isLoading = false;
+        this.isApiMode = false;
         this.dimensions = 0;
         this.modelName = '';
+        this._apiUrl = '';
+        this._apiKey = '';
+        this._apiModel = '';
         this.termCounts = new Map();
         this.totalDocuments = 0;
         this._pendingCallbacks = new Map();
@@ -115,6 +121,36 @@ export class VectorManager {
         }
     }
 
+    /**
+     * 初始化 API 模式（OpenAI 兼容的 embedding endpoint）
+     */
+    async initApi(url, key, model) {
+        if (this.isLoading) return;
+        this.isLoading = true;
+        this.isReady = false;
+
+        try {
+            await this._disposeWorker();
+
+            this.isApiMode = true;
+            this._apiUrl = url.replace(/\/+$/, '');
+            this._apiKey = key;
+            this._apiModel = model;
+            this.modelName = model;
+
+            // 探测维度：发一条测试文本
+            const testResult = await this._embedApi(['test']);
+            if (!testResult?.vectors?.[0]) {
+                throw new Error('API 连接失败或返回格式异常，请检查地址、密钥和模型名称是否正确');
+            }
+            this.dimensions = testResult.vectors[0].length;
+            this.isReady = true;
+            console.log(`[Horae Vector] API 模式已就绪: ${model} (${this.dimensions}维)`);
+        } finally {
+            this.isLoading = false;
+        }
+    }
+
     async dispose() {
         await this._disposeWorker();
         this.vectors.clear();
@@ -122,6 +158,10 @@ export class VectorManager {
         this.totalDocuments = 0;
         this.chatId = null;
         this.isReady = false;
+        this.isApiMode = false;
+        this._apiUrl = '';
+        this._apiKey = '';
+        this._apiModel = '';
     }
 
     async _disposeWorker() {
@@ -279,7 +319,7 @@ export class VectorManager {
 
         if (tasks.length === 0) return { indexed: 0, skipped: chat.length };
 
-        const batchSize = 16;
+        const batchSize = this.isApiMode ? 8 : 16;
         let indexed = 0;
 
         for (let b = 0; b < tasks.length; b += batchSize) {
@@ -372,7 +412,7 @@ export class VectorManager {
      * @param {Set<number>} excludeIndices - 排除的消息索引（已在上下文中）
      * @returns {Promise<Array<{messageIndex: number, similarity: number, document: string}>>}
      */
-    async search(queryText, topK = 5, threshold = 0.72, excludeIndices = new Set()) {
+    async search(queryText, topK = 5, threshold = 0.72, excludeIndices = new Set(), pureMode = false) {
         if (!this.isReady || !queryText || this.vectors.size === 0) return [];
 
         const prepared = this._prepareText(queryText, true);
@@ -412,8 +452,8 @@ export class VectorManager {
 
         scored.sort((a, b) => b.similarity - a.similarity);
 
-        const adjusted = this._adjustThresholdByFrequency(scored, threshold);
-        console.log(`[Horae Vector] 频率过滤后: ${adjusted.length} 条`);
+        const adjusted = pureMode ? scored : this._adjustThresholdByFrequency(scored, threshold);
+        if (!pureMode) console.log(`[Horae Vector] 频率过滤后: ${adjusted.length} 条`);
 
         const deduped = this._deduplicateResults(adjusted);
         console.log(`[Horae Vector] 去重后: ${deduped.length} 条`);
@@ -500,13 +540,16 @@ export class VectorManager {
 
         const merged = new Map();
 
-        const structuredResults = this._structuredQuery(userQuery, chat, state, excludeIndices, topK);
+        const pureMode = !!settings.vectorPureMode;
+        if (pureMode) console.log('[Horae Vector] 纯向量模式已启用，跳过关键词启发式');
+
+        const structuredResults = this._structuredQuery(userQuery, chat, state, excludeIndices, topK, pureMode);
         console.log(`[Horae Vector] 结构化查询: ${structuredResults.length} 条命中`);
         for (const r of structuredResults) {
             merged.set(r.messageIndex, r);
         }
 
-        const hybridResults = await this._hybridSearch(userQuery, state, horaeManager, skipLast, settings, excludeIndices, topK, threshold);
+        const hybridResults = await this._hybridSearch(userQuery, state, horaeManager, skipLast, settings, excludeIndices, topK, threshold, pureMode);
         console.log(`[Horae Vector] 向量混合搜索: ${hybridResults.length} 条命中`);
         for (const r of hybridResults) {
             if (!merged.has(r.messageIndex)) {
@@ -514,7 +557,42 @@ export class VectorManager {
             }
         }
 
+        // 多人卡角色相关性加权：
+        // 收集"相关角色" = 用户消息中提到的角色 + 当前在场角色
+        // 对涉及相关角色的结果施加小幅正向加权，优先召回相关事件
+        // 不过滤任何结果，确保跨角色引用（如向A提起B）仍能召回
+        const relevantChars = new Set(state.scene?.characters_present || []);
+        const allKnownChars = new Set();
+        for (let i = 0; i < chat.length; i++) {
+            const m = chat[i].horae_meta;
+            if (!m) continue;
+            (m.scene?.characters_present || []).forEach(c => allKnownChars.add(c));
+            if (m.npcs) Object.keys(m.npcs).forEach(c => allKnownChars.add(c));
+        }
+        for (const c of allKnownChars) {
+            if (userQuery && userQuery.includes(c)) relevantChars.add(c);
+        }
+
         let results = Array.from(merged.values());
+        if (relevantChars.size > 0) {
+            for (const r of results) {
+                const meta = chat[r.messageIndex]?.horae_meta;
+                if (!meta) continue;
+                const docChars = new Set([
+                    ...(meta.scene?.characters_present || []),
+                    ...Object.keys(meta.npcs || {}),
+                ]);
+                let hasRelevant = false;
+                for (const c of relevantChars) {
+                    if (docChars.has(c)) { hasRelevant = true; break; }
+                }
+                if (hasRelevant) {
+                    r.similarity += 0.03;
+                }
+            }
+            console.log(`[Horae Vector] 角色加权: 相关角色=[${[...relevantChars].join(',')}]`);
+        }
+
         results.sort((a, b) => b.similarity - a.similarity);
         results = results.slice(0, topK);
 
@@ -540,7 +618,7 @@ export class VectorManager {
     /**
      * 从用户消息解析意图，直接查询 horae_meta 结构化数据
      */
-    _structuredQuery(userQuery, chat, state, excludeIndices, topK) {
+    _structuredQuery(userQuery, chat, state, excludeIndices, topK, pureMode = false) {
         if (!userQuery || chat.length === 0) return [];
 
         const knownChars = new Set();
@@ -641,21 +719,24 @@ export class VectorManager {
             }
         }
 
-        if (hasCeremonyKw || hasPromiseKw || hasLossKw || hasRevelationKw || hasPowerKw) {
-            const thematicResults = this._findThematicEvents(chat, {
-                ceremony: hasCeremonyKw, promise: hasPromiseKw,
-                loss: hasLossKw, revelation: hasRevelationKw, power: hasPowerKw,
-            }, excludeIndices, topK);
-            for (const r of thematicResults) {
-                results.push(r);
-                console.log(`[Horae Vector] 结构化查询: 主题事件 #${r.messageIndex} [${r.document}]`);
+        // 纯向量模式下跳过关键词启发式（主题事件搜索、事件词组匹配），完全依赖向量语义
+        if (!pureMode) {
+            if (hasCeremonyKw || hasPromiseKw || hasLossKw || hasRevelationKw || hasPowerKw) {
+                const thematicResults = this._findThematicEvents(chat, {
+                    ceremony: hasCeremonyKw, promise: hasPromiseKw,
+                    loss: hasLossKw, revelation: hasRevelationKw, power: hasPowerKw,
+                }, excludeIndices, topK);
+                for (const r of thematicResults) {
+                    results.push(r);
+                    console.log(`[Horae Vector] 结构化查询: 主题事件 #${r.messageIndex} [${r.document}]`);
+                }
             }
-        }
 
-        const existingIds = new Set(results.map(r => r.messageIndex));
-        const eventMatches = this._eventKeywordSearch(userQuery, chat, mentionedChars, existingIds, excludeIndices, topK);
-        for (const m of eventMatches) {
-            results.push(m);
+            const existingIds = new Set(results.map(r => r.messageIndex));
+            const eventMatches = this._eventKeywordSearch(userQuery, chat, mentionedChars, existingIds, excludeIndices, topK);
+            for (const m of eventMatches) {
+                results.push(m);
+            }
         }
 
         const withContext = this._expandContextWindow(results, chat, excludeIndices);
@@ -1038,8 +1119,8 @@ export class VectorManager {
     // 向量+关键词混合搜索（兜底）
     // ========================================
 
-    async _hybridSearch(userQuery, state, horaeManager, skipLast, settings, excludeIndices, topK, threshold) {
-        if (!this.isReady || this.vectors.size === 0 || !this.worker) return [];
+    async _hybridSearch(userQuery, state, horaeManager, skipLast, settings, excludeIndices, topK, threshold, pureMode = false) {
+        if (!this.isReady || this.vectors.size === 0) return [];
 
         const lastIdx = Math.max(0, horaeManager.getChat().length - 1 - skipLast);
         const lastMeta = horaeManager.getMessageMeta(lastIdx);
@@ -1049,7 +1130,7 @@ export class VectorManager {
 
         if (userQuery) {
             const intentThreshold = Math.max(threshold - 0.25, 0.4);
-            const intentResults = await this.search(userQuery, topK * 2, intentThreshold, excludeIndices);
+            const intentResults = await this.search(userQuery, topK * 2, intentThreshold, excludeIndices, pureMode);
             console.log(`[Horae Vector] 意图搜索: ${intentResults.length} 条`);
             for (const r of intentResults) {
                 merged.set(r.messageIndex, { ...r, source: 'intent' });
@@ -1057,7 +1138,7 @@ export class VectorManager {
         }
 
         if (stateQuery) {
-            const stateResults = await this.search(stateQuery, topK * 2, threshold, excludeIndices);
+            const stateResults = await this.search(stateQuery, topK * 2, threshold, excludeIndices, pureMode);
             console.log(`[Horae Vector] 状态搜索: ${stateResults.length} 条`);
             for (const r of stateResults) {
                 const existing = merged.get(r.messageIndex);
@@ -1209,6 +1290,7 @@ export class VectorManager {
     // ========================================
 
     _embed(texts) {
+        if (this.isApiMode) return this._embedApi(texts);
         if (!this.worker) return Promise.resolve(null);
         const id = ++this._callId;
         return new Promise((resolve, reject) => {
@@ -1221,6 +1303,38 @@ export class VectorManager {
                 }
             }, 30000);
         });
+    }
+
+    async _embedApi(texts) {
+        const endpoint = `${this._apiUrl}/embeddings`;
+        try {
+            const resp = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this._apiKey}`,
+                },
+                body: JSON.stringify({
+                    model: this._apiModel,
+                    input: texts,
+                }),
+            });
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => '');
+                throw new Error(`API ${resp.status}: ${errText.slice(0, 200)}`);
+            }
+            const json = await resp.json();
+            if (!json.data || !Array.isArray(json.data)) {
+                throw new Error('API 返回格式异常：缺少 data 数组');
+            }
+            const vectors = json.data
+                .sort((a, b) => a.index - b.index)
+                .map(d => d.embedding);
+            return { vectors };
+        } catch (err) {
+            console.error('[Horae Vector] API embedding 失败:', err);
+            throw err;
+        }
     }
 
     // ========================================

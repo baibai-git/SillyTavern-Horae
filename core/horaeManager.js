@@ -1792,13 +1792,36 @@ class HoraeManager {
             resetTable(overlay);
         }
         
-        // 2. 按消息顺序回放 tableContributions（截断到 limit）
+        // 2. 预扫描：找到每个表格最后一个 _isUserEdit 所在的消息索引
+        const lastUserEditIdx = new Map();
+        for (let i = 0; i < limit; i++) {
+            const meta = chat[i]?.horae_meta;
+            if (meta?.tableContributions) {
+                for (const tc of meta.tableContributions) {
+                    if (tc._isUserEdit) {
+                        lastUserEditIdx.set((tc.name || '').trim(), i);
+                    }
+                }
+            }
+        }
+
+        // 3. 按消息顺序回放 tableContributions（截断到 limit）
+        // 防御：如果某表格存在用户编辑快照，跳过该快照之前的所有 AI 贡献
         let totalApplied = 0;
         for (let i = 0; i < limit; i++) {
             const meta = chat[i]?.horae_meta;
             if (meta?.tableContributions && meta.tableContributions.length > 0) {
-                this.applyTableUpdates(meta.tableContributions);
-                totalApplied++;
+                const filtered = meta.tableContributions.filter(tc => {
+                    if (tc._isUserEdit) return true;
+                    const name = (tc.name || '').trim();
+                    const ueIdx = lastUserEditIdx.get(name);
+                    if (ueIdx !== undefined && i <= ueIdx) return false;
+                    return true;
+                });
+                if (filtered.length > 0) {
+                    this.applyTableUpdates(filtered);
+                    totalApplied++;
+                }
             }
         }
         

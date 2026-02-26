@@ -10,7 +10,7 @@
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">v1.7.0</span>
+            <span class="horae-version">v1.7.1</span>
         </div>
         
         <!-- 标签页导航 -->
@@ -630,10 +630,9 @@
                     <div id="horae-vector-collapse-body" style="display: none;">
                         <span class="horae-setting-hint" style="margin-bottom: 12px;">
                             <i class="fa-solid fa-circle-info"></i>
-                            使用本地 Embedding 模型对 Horae 标签数据做向量检索，自动召回相关历史片段注入给 AI。<br>
-                            首次使用会下载约 <strong>25MB</strong> 量化模型到浏览器缓存，之后秒启。<br>
-                            运行时额外占用约 <strong>50-80MB</strong> 内存，计算在后台 Web Worker 进行，<strong>不会卡住界面</strong>。<br>
-                            ⚠ <strong>2GB 内存以下的手机设备</strong>建议关闭此功能。
+                            对 Horae 标签数据做向量检索，自动召回相关历史片段注入给 AI。<br>
+                            <strong>本地模式：</strong>下载约 25MB 量化模型到浏览器缓存，占用 50-80MB 内存，⚠ 2GB 以下手机建议关闭。<br>
+                            <strong>API 模式：</strong>使用远程 Embedding API，无需本地资源。
                         </span>
                         <div class="horae-setting-item">
                             <label>
@@ -644,22 +643,74 @@
                         <div id="horae-vector-options" style="display: none;">
                             <div class="horae-setting-item">
                                 <label>
-                                    嵌入模型
-                                    <select id="horae-setting-vector-model">
-                                        <option value="Xenova/bge-small-zh-v1.5">bge-small-zh-v1.5 (中文优化, ~24MB)</option>
-                                        <option value="Xenova/multilingual-e5-small">multilingual-e5-small (多语言, ~33MB)</option>
+                                    向量来源
+                                    <select id="horae-setting-vector-source">
+                                        <option value="local">本地模型（浏览器内运行）</option>
+                                        <option value="api">远程 Embedding API</option>
                                     </select>
                                 </label>
                             </div>
-                            <div class="horae-setting-item">
-                                <label>
-                                    量化精度
-                                    <select id="horae-setting-vector-dtype">
-                                        <option value="q8">q8（推荐，精度损失极小）</option>
-                                        <option value="q4">q4（速度快/内存省，精度略降）</option>
-                                    </select>
-                                </label>
-                                <span class="horae-setting-sub-hint">q4 适合大多数设备；q8 精度更高但体积翻倍。</span>
+                            <div id="horae-vector-local-options">
+                                <div class="horae-setting-item">
+                                    <label>
+                                        嵌入模型
+                                        <select id="horae-setting-vector-model">
+                                            <option value="Xenova/bge-small-zh-v1.5">bge-small-zh-v1.5 (中文优化, ~24MB)</option>
+                                            <option value="Xenova/multilingual-e5-small">multilingual-e5-small (多语言, ~33MB)</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="horae-setting-item">
+                                    <label>
+                                        量化精度
+                                        <select id="horae-setting-vector-dtype">
+                                            <option value="q8">q8（推荐，精度损失极小）</option>
+                                            <option value="q4">q4（速度快/内存省，精度略降）</option>
+                                        </select>
+                                    </label>
+                                    <span class="horae-setting-sub-hint">q4 适合大多数设备；q8 精度更高但体积翻倍。</span>
+                                </div>
+                            </div>
+                            <div id="horae-vector-api-options" style="display: none;">
+                                <span class="horae-setting-hint" style="margin-bottom: 8px; color: #e67e22;">
+                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                    <strong>⚠ 只能填写 Embedding（嵌入/向量）模型！</strong><br>
+                                    不要填 LLM 聊天模型（如 gemini 3、gpt-4 等），否则会报错。<br>
+                                    推荐：<code>text-embedding-v3</code>（Qwen）、<code>text-embedding-3-small</code>（OpenAI）
+                                </span>
+                                <div class="horae-setting-item">
+                                    <label>
+                                        API 地址
+                                        <input type="text" id="horae-setting-vector-api-url" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1">
+                                    </label>
+                                    <span class="horae-setting-sub-hint">OpenAI 兼容格式，会自动拼接 /embeddings 路径。<br>例，填：https://dashscope.aliyuncs.com/compatible-mode/v1</span>
+                                </div>
+                                <div class="horae-setting-item">
+                                    <label>
+                                        API 密钥
+                                        <input type="password" id="horae-setting-vector-api-key" placeholder="sk-...">
+                                    </label>
+                                </div>
+                                <div class="horae-setting-item">
+                                    <label>
+                                        Embedding 模型名称
+                                        <input type="text" id="horae-setting-vector-api-model" placeholder="text-embedding-v3">
+                                    </label>
+                                    <span class="horae-setting-sub-hint">Qwen: text-embedding-v3 / text-embedding-v2<br>OpenAI: text-embedding-3-small / text-embedding-3-large</span>
+                                </div>
+                                <div class="horae-setting-item">
+                                    <label>
+                                        <input type="checkbox" id="horae-setting-vector-pure-mode">
+                                        纯向量模式（强模型优化）
+                                    </label>
+                                    <span class="horae-setting-hint" style="margin-top: 4px;">
+                                        <i class="fa-solid fa-circle-info"></i>
+                                        适用于高维度 API 模型（如 Qwen3-Embedding、text-embedding-3-large 等）。<br>
+                                        开启后将<strong>关闭关键词扩展、事件词组匹配、高频词惩罚</strong>等辅助启发式，<br>
+                                        完全依赖模型自身的语义理解能力进行召回，减少低质量噪音。<br>
+                                        ⚠ 如果你使用的是小型或低维度模型，<strong>请不要开启</strong>，否则召回质量会下降。
+                                    </span>
+                                </div>
                             </div>
                             <div class="horae-setting-item">
                                 <label>
@@ -884,7 +935,7 @@
                 </div>
                 
                 <div class="horae-about">
-                    <p>Horae v1.7.0 | 作者: SenriYuki</p>
+                    <p>Horae v1.7.1 | 作者: SenriYuki</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>
