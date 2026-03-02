@@ -1,4 +1,4 @@
-# Horae - 时光记忆 v1.7.3 | SillyTavern 记忆增强插件
+# Horae - 时光记忆 v1.7.4 | SillyTavern 记忆增强插件
 
 ![Image](https://github.com/SenriYuki/SillyTavern-Horae/blob/main/HoraeLogo.jpg)
 

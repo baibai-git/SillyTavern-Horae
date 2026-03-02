@@ -10,7 +10,7 @@
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">v1.7.3</span>
+            <span class="horae-version">v1.7.4</span>
         </div>
         
         <!-- 标签页导航 -->
@@ -342,8 +342,13 @@
                             面板宽度
                             <input type="number" id="horae-setting-panel-width" min="50" max="100" value="100">
                         </label>
+                        <label style="margin-left:12px;">
+                            右偏移
+                            <input type="range" id="horae-setting-panel-offset" min="0" max="300" value="0" style="width:100px;vertical-align:middle;">
+                            <span id="horae-panel-offset-value" style="font-size:11px;color:var(--horae-text-muted);">0px</span>
+                        </label>
                         <span class="horae-setting-hint">
-                            消息面板占聊天区域的宽度百分比（50-100）。宽屏美化可调低避免溢出。
+                            消息面板占聊天区域的宽度百分比（50-100）。宽屏美化可调低避免溢出。右偏移可微调面板水平位置。
                         </span>
                     </div>
                 </div>
@@ -1005,7 +1010,7 @@
                 </div>
                 
                 <div class="horae-about">
-                    <p>Horae v1.7.3 | 作者: SenriYuki</p>
+                    <p>Horae v1.7.4 | 作者: SenriYuki</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>

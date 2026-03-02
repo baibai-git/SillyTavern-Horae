@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.7.3
+ * 版本: 1.7.4
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -20,7 +20,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.7.3';
+const VERSION = '1.7.4';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -103,6 +103,7 @@ const DEFAULT_SETTINGS = {
     aiScanIncludeScene: false,    // AI摘要是否提取场景记忆
     aiScanIncludeRelationship: false, // AI摘要是否提取关系网络
     panelWidth: 100,               // 消息面板宽度百分比（50-100）
+    panelOffset: 0,                // 消息面板右偏移量（px）
     themeMode: 'dark',             // 插件主题：dark / light / custom-{index}
     customCSS: '',                 // 用户自定义CSS
     customThemes: [],              // 导入的美化主题 [{name, author, variables, css}]
@@ -1846,8 +1847,12 @@ async function compressSelectedTimelineEvents() {
             });
         }
         
-        // 隐藏被压缩的消息楼层
-        await setMessagesHidden(chat, compressedMsgIndices, true);
+        // 隐藏范围内所有楼层（包括中间的 USER 消息）
+        const hideMin = compressedMsgIndices[0];
+        const hideMax = compressedMsgIndices[compressedMsgIndices.length - 1];
+        const hideIndices = [];
+        for (let i = hideMin; i <= hideMax; i++) hideIndices.push(i);
+        await setMessagesHidden(chat, hideIndices, true);
         
         await context.saveChat();
         overlay.remove();
@@ -4678,11 +4683,13 @@ function applyTopIconVisibility() {
     $('#horae-ext-show-top-icon').prop('checked', show);
 }
 
-/** 应用消息面板宽度设置 */
+/** 应用消息面板宽度和偏移设置 */
 function applyPanelWidth() {
     const width = Math.max(50, Math.min(100, settings.panelWidth || 100));
+    const offset = Math.max(0, settings.panelOffset || 0);
     document.querySelectorAll('.horae-message-panel').forEach(panel => {
         panel.style.maxWidth = width < 100 ? `${width}%` : '';
+        panel.style.marginLeft = offset > 0 ? `${offset}px` : '';
     });
 }
 
@@ -5504,10 +5511,14 @@ function addMessagePanel(messageEl, messageIndex) {
         if (!settings.showMessagePanel && panelEl) {
             panelEl.style.display = 'none';
         }
-        // 应用自定义宽度
+        // 应用自定义宽度和偏移
         const w = Math.max(50, Math.min(100, settings.panelWidth || 100));
         if (w < 100 && panelEl) {
             panelEl.style.maxWidth = `${w}%`;
+        }
+        const ofs = Math.max(0, settings.panelOffset || 0);
+        if (ofs > 0 && panelEl) {
+            panelEl.style.marginLeft = `${ofs}px`;
         }
         // 继承主题模式
         if (isLightMode() && panelEl) {
@@ -6858,6 +6869,13 @@ function initSettingsEvents() {
         saveSettings();
         applyPanelWidth();
     });
+    $('#horae-setting-panel-offset').on('input', function() {
+        const val = Math.max(0, parseInt(this.value) || 0);
+        settings.panelOffset = val;
+        $('#horae-panel-offset-value').text(`${val}px`);
+        saveSettings();
+        applyPanelWidth();
+    });
 
     // 主题模式切换
     $('#horae-setting-theme-mode').on('change', function() {
@@ -7342,8 +7360,11 @@ function syncSettingsToUI() {
     $('#horae-relationship-prompt-count').text(relPromptVal.length);
     $('#horae-mood-prompt-count').text(moodPromptVal.length);
     
-    // 面板宽度
+    // 面板宽度和偏移
     $('#horae-setting-panel-width').val(settings.panelWidth || 100);
+    const ofs = settings.panelOffset || 0;
+    $('#horae-setting-panel-offset').val(ofs);
+    $('#horae-panel-offset-value').text(`${ofs}px`);
     applyPanelWidth();
 
     // 主题模式
