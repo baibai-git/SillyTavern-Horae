@@ -4955,3 +4955,130 @@ body .horae-context-menu {
     .htd-swatch { width: 22px; height: 22px; }
     .htd-btn-row .horae-btn { min-width: 60px; font-size: 11px; padding: 5px 8px; }
 }
+
+/* ===== RPG 骰子面板 ===== */
+.horae-rpg-dice-panel {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+    font-family: var(--horae-font);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.horae-rpg-dice-panel.horae-dice-placed {
+    transform: none;
+    right: auto !important;
+    bottom: auto !important;
+}
+.horae-rpg-dice-toggle {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: var(--horae-dice-bg, var(--horae-bg, #1a1a2e));
+    border: 1px solid var(--horae-border, #333);
+    color: var(--horae-accent, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    font-size: 18px;
+    transition: background 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.horae-rpg-dice-toggle:active { cursor: grabbing; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+.horae-rpg-dice-toggle:hover { background: var(--horae-card-bg, #252540); }
+.horae-rpg-dice-body {
+    position: absolute;
+    bottom: 50px;
+    right: 0;
+    width: 240px;
+    background: var(--horae-dice-bg, var(--horae-bg, #1a1a2e));
+    border: 1px solid var(--horae-border, #333);
+    border-radius: 10px;
+    padding: 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+/* 面板靠近顶部时弹出方向翻转到下方 */
+.horae-rpg-dice-panel.horae-dice-flip-down .horae-rpg-dice-body {
+    bottom: auto;
+    top: 50px;
+}
+.horae-rpg-dice-types {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+.horae-rpg-dice-btn {
+    flex: 1 1 auto;
+    min-width: 42px;
+    padding: 5px 2px;
+    background: var(--horae-card-bg, #252540);
+    border: 1px solid var(--horae-border, #333);
+    border-radius: 6px;
+    color: var(--horae-text, #e0e0e0);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+}
+.horae-rpg-dice-btn:hover { border-color: var(--horae-accent, #6366f1); }
+.horae-rpg-dice-btn.active {
+    background: var(--horae-accent, #6366f1);
+    color: #fff;
+    border-color: var(--horae-accent, #6366f1);
+}
+.horae-rpg-dice-config {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.horae-rpg-dice-config label {
+    font-size: 11px;
+    color: var(--horae-text-dim, #888);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.horae-rpg-dice-input {
+    width: 48px;
+    padding: 3px 5px;
+    background: var(--horae-card-bg, #252540);
+    border: 1px solid var(--horae-border, #333);
+    border-radius: 4px;
+    color: var(--horae-text, #e0e0e0);
+    font-size: 12px;
+    text-align: center;
+}
+.horae-rpg-dice-result {
+    min-height: 28px;
+    padding: 6px 8px;
+    background: var(--horae-card-bg, #252540);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--horae-accent, #6366f1);
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 6px;
+    word-break: break-all;
+}
+.horae-rpg-dice-inject {
+    width: 100%;
+    padding: 6px;
+    background: var(--horae-accent, #6366f1);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: opacity 0.15s;
+}
+.horae-rpg-dice-inject:hover { opacity: 0.85; }
+@media screen and (max-width: 768px) {
+    .horae-rpg-dice-body { width: 220px; }
+}

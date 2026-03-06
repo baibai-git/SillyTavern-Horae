@@ -10,7 +10,7 @@
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">v1.8.3</span>
+            <span class="horae-version">v1.8.4</span>
         </div>
         
         <!-- 标签页导航 -->
@@ -207,7 +207,28 @@
                 </div>
                 
                 <div class="horae-subsection">
-                    <div class="horae-subsection-title">角色</div>
+                    <div class="horae-subsection-title">
+                        角色
+                        <button id="horae-btn-npc-multiselect" class="horae-icon-btn small" title="多选模式">
+                            <i class="fa-solid fa-check-double"></i>
+                        </button>
+                    </div>
+                    <div id="horae-npc-multiselect-bar" class="horae-multiselect-bar" style="display: none;">
+                        <div class="horae-multiselect-info">
+                            <span id="horae-npc-selected-count">0</span> 项已选
+                        </div>
+                        <div class="horae-multiselect-actions">
+                            <button id="horae-btn-npc-select-all" class="horae-icon-btn small" title="全选">
+                                <i class="fa-solid fa-check-double"></i>
+                            </button>
+                            <button id="horae-btn-npc-delete" class="horae-icon-btn small danger" title="删除选中">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                            <button id="horae-btn-npc-cancel-select" class="horae-icon-btn small" title="取消">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
                     <div id="horae-npc-list" class="horae-npc-list">
                         <div class="horae-empty-hint">暂无角色记录</div>
                     </div>
@@ -301,7 +322,7 @@
             <!-- RPG 页 -->
             <div id="horae-tab-rpg" class="horae-tab-content">
                 <!-- 属性条配置 -->
-                <div class="horae-rpg-config-section">
+                <div class="horae-rpg-config-section" id="horae-rpg-bar-config-area">
                     <div class="horae-rpg-section-head">
                         <span>属性条配置</span>
                         <button id="horae-rpg-bar-reset" class="horae-rpg-btn-sm" title="恢复默认"><i class="fa-solid fa-rotate-left"></i></button>
@@ -601,9 +622,16 @@
                                 <input type="checkbox" id="horae-setting-rpg-attrs" checked>
                                 发送属性面板（多维属性）
                             </label>
-                            <label style="display:block;">
+                            <label style="display:block;margin-bottom:4px;">
                                 <input type="checkbox" id="horae-setting-rpg-skills" checked>
                                 发送技能列表
+                            </label>
+                            <label style="display:block;">
+                                <input type="checkbox" id="horae-setting-rpg-dice">
+                                骰子面板（掷骰注入聊天栏）
+                                <button id="horae-dice-reset-pos" class="horae-icon-btn small" title="重置骰子面板位置" style="margin-left:6px;vertical-align:middle;">
+                                    <i class="fa-solid fa-location-crosshairs"></i>
+                                </button>
                             </label>
                         </div>
                     </div>
@@ -1101,7 +1129,7 @@
                 </div>
                 
                 <div class="horae-about">
-                    <p>Horae v1.8.3 | 作者: SenriYuki</p>
+                    <p>Horae v1.8.4 | 作者: SenriYuki</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>

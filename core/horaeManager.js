@@ -324,6 +324,20 @@ class HoraeManager {
             }
         }
         
+        // 过滤用户已删除的NPC（防回滚）
+        const deletedNpcs = chat[0]?.horae_meta?._deletedNpcs;
+        if (deletedNpcs?.length) {
+            for (const name of deletedNpcs) {
+                delete state.npcs[name];
+                delete state.affection[name];
+                delete state.costumes[name];
+                delete state.mood[name];
+                if (state.scene.characters_present) {
+                    state.scene.characters_present = state.scene.characters_present.filter(c => c !== name);
+                }
+            }
+        }
+        
         // 为无ID物品分配ID
         let maxId = 0;
         for (const info of Object.values(state.items)) {
@@ -604,6 +618,7 @@ class HoraeManager {
                     }
                     // 扩展字段
                     const extras = [];
+                    if (info._aliases?.length) extras.push(`曾用名:${info._aliases.join('/')}`);
                     if (info.gender) extras.push(`性别:${info.gender}`);
                     if (info.age) {
                         const ageResult = this.calcCurrentAge(info, state.timestamp.story_date);
@@ -2416,8 +2431,7 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
 - 奇幻/架空：该世界观日历（如 霜降月第三日 黄昏）
 ${this.generateLocationMemoryPrompt()}${this.generateCustomTablesPrompt()}${this.generateRelationshipPrompt()}${this.generateMoodPrompt()}${this.generateRpgPrompt()}${this._generateAntiParaphrasePrompt()}
 ═══ 最终强制提醒 ═══
-你的回复末尾必须包含 <horae>...</horae> 和 <horaeevent>...</horaeevent> 两个标签。
-缺少任何一个标签=不合格。
+${this._generateMustTagsReminder()}
 
 【每回合必写字段——缺任何一项=不合格！】
   ✅ time: ← 当前日期时间
@@ -2801,6 +2815,16 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
             p += `  skill-:归属|技能名\n`;
         }
         return p;
+    }
+
+    /** 动态生成必须包含的标签提醒（RPG 开启时追加 <horaerpg>） */
+    _generateMustTagsReminder() {
+        const tags = ['<horae>...</horae>', '<horaeevent>...</horaeevent>'];
+        const rpgActive = this.settings?.rpgMode &&
+            (this.settings.sendRpgBars !== false || this.settings.sendRpgSkills !== false || this.settings.sendRpgAttributes !== false);
+        if (rpgActive) tags.push('<horaerpg>...</horaerpg>');
+        const count = tags.length === 2 ? '两个' : `${tags.length}个`;
+        return `你的回复末尾必须包含 ${tags.join(' 和 ')} ${count}标签。\n缺少任何一个标签=不合格。`;
     }
 
     /** 宽松正则解析（不需要标签包裹） */
