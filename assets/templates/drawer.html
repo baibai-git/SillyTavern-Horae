@@ -10,7 +10,7 @@
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">v1.9.1</span>
+            <span class="horae-version">v1.9.2</span>
         </div>
         
         <!-- 标签页导航 -->
@@ -947,13 +947,16 @@
                             </div>
                             <div class="horae-setting-item">
                                 <label>
-                                    全文剔除标签
+                                    内容剔除标签
                                     <input type="text" id="horae-setting-vector-strip-tags" class="horae-edit-field" placeholder="snow, theater, side">
                                 </label>
                                 <span class="horae-setting-sub-hint">
-                                    用逗号分隔标签名。全文回顾和 Rerank 全文精排时，这些标签包裹的内容会被整段移除。<br>
-                                    例：填 <code>snow, theater</code> 会剔除 <code>&lt;snow&gt;...&lt;/snow&gt;</code> 和 <code>&lt;theater&gt;...&lt;/theater&gt;</code> 的全部内容。<br>
-                                    适用于在正文中写小剧场/旁白等不想被 AI 召回的内容。
+                                    用逗号分隔标签名。以下场景会整段移除这些标签包裹的内容：<br>
+                                    · <b>向量检索</b>全文回顾 &amp; Rerank 全文精排<br>
+                                    · <b>时间线解析</b>：防止小剧场内的 horae 标签污染正文时间线<br>
+                                    · <b>AI 智能摘要</b>：发送消息给 AI 分析前先剔除<br>
+                                    例：填 <code>snow, theater</code> 会剔除 <code>&lt;snow&gt;...&lt;/snow&gt;</code> 和 <code>&lt;theater&gt;...&lt;/theater&gt;</code>。<br>
+                                    HTML 注释 <code>&lt;!-- ... --&gt;</code> 已默认剔除，无需填写。
                                 </span>
                             </div>
                             <div class="horae-vector-status">
@@ -1164,7 +1167,7 @@
                 </div>
                 
                 <div class="horae-about">
-                    <p>Horae v1.9.1 | 作者: SenriYuki</p>
+                    <p>Horae v1.9.2 | 作者: SenriYuki</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>

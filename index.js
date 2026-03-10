@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.9.1
+ * 版本: 1.9.2
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -20,7 +20,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.9.1';
+const VERSION = '1.9.2';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -5350,6 +5350,30 @@ function refreshAllDisplays() {
     enforceHiddenState();
 }
 
+/** chat[0] 上的全局键——无法由 rebuild 系列函数重建，需在 meta 重置时保留 */
+const _GLOBAL_META_KEYS = [
+    'autoSummaries', '_deletedNpcs', '_deletedAgendaTexts',
+    'locationMemory', 'relationships',
+];
+
+function _saveGlobalMeta(meta) {
+    if (!meta) return null;
+    const saved = {};
+    for (const key of _GLOBAL_META_KEYS) {
+        if (meta[key] !== undefined) saved[key] = meta[key];
+    }
+    return Object.keys(saved).length ? saved : null;
+}
+
+function _restoreGlobalMeta(meta, saved) {
+    if (!saved || !meta) return;
+    for (const key of _GLOBAL_META_KEYS) {
+        if (saved[key] !== undefined && meta[key] === undefined) {
+            meta[key] = saved[key];
+        }
+    }
+}
+
 /**
  * 提取消息事件上的摘要压缩标记（_compressedBy / _summaryId），
  * 用于在 createEmptyMeta() 重置后恢复，防止摘要事件从时间线中逃逸
@@ -5736,7 +5760,7 @@ function openLocationEditModal(locationName) {
 function openLocationMergeModal() {
     closeEditModal();
     const locMem = horaeManager.getLocationMemory();
-    const entries = Object.entries(locMem);
+    const entries = Object.entries(locMem).filter(([, info]) => !info._deleted);
     
     if (entries.length < 2) {
         showToast('至少需要2个地点才能合并', 'warning');
@@ -10356,6 +10380,19 @@ function estimateTokens(text) {
     return Math.ceil(cjk * 1.5 + rest * 0.4);
 }
 
+/** 根据 vectorStripTags 配置的标签列表，整块移除对应内容（小剧场等），避免污染 AI 摘要/解析 */
+function _stripConfiguredTags(text) {
+    if (!text) return text;
+    const tagList = settings.vectorStripTags;
+    if (!tagList) return text;
+    const tags = tagList.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean);
+    for (const tag of tags) {
+        const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(new RegExp(`<${escaped}(?:\\s[^>]*)?>[\\s\\S]*?</${escaped}>`, 'gi'), '');
+    }
+    return text.trim();
+}
+
 /** 判断消息是否为空层（同层系统等代码渲染的无实际叙事内容楼层） */
 function isEmptyOrCodeLayer(mes) {
     if (!mes) return true;
@@ -10386,7 +10423,7 @@ async function batchAIScan() {
                 const nextMeta = nextMsg.horae_meta;
                 if (nextMeta?.events?.length > 0) { i++; continue; }
                 if (isEmptyOrCodeLayer(nextMsg.mes) && isEmptyOrCodeLayer(msg.mes)) { i++; skippedEmpty++; continue; }
-                const combined = `[USER行动]\n${msg.mes}\n\n[AI回复]\n${nextMsg.mes}`;
+                const combined = `[USER行动]\n${_stripConfiguredTags(msg.mes)}\n\n[AI回复]\n${_stripConfiguredTags(nextMsg.mes)}`;
                 targets.push({ index: i + 1, text: combined });
                 i++;
             }
@@ -10396,7 +10433,7 @@ async function batchAIScan() {
         if (isEmptyOrCodeLayer(msg.mes)) { skippedEmpty++; continue; }
         const meta = msg.horae_meta;
         if (meta?.events?.length > 0) continue;
-        targets.push({ index: i, text: msg.mes });
+        targets.push({ index: i, text: _stripConfiguredTags(msg.mes) });
     }
 
     if (targets.length === 0) {
@@ -11012,6 +11049,18 @@ function showAIScanConfigDialog(targetCount) {
                             从历史文本中提取信息，提取后可在审阅弹窗中逐条调整。
                         </p>
                     </div>
+                    <div style="border-top: 1px solid var(--horae-border); padding-top: 12px; margin-top: 12px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--horae-text);">
+                            <i class="fa-solid fa-filter" style="font-size: 11px; opacity: .6;"></i>
+                            内容剔除标签
+                            <input type="text" id="horae-scan-strip-tags" value="${escapeHtml(settings.vectorStripTags || '')}" placeholder="snow, theater, side"
+                                style="flex:1; padding: 5px 8px; background: var(--horae-bg); border: 1px solid var(--horae-border); border-radius: 4px; color: var(--horae-text); font-size: 12px;">
+                        </label>
+                        <p style="margin: 4px 0 0; color: var(--horae-text-muted); font-size: 10px;">
+                            逗号分隔标签名，匹配的区块会在发送 AI 前整段移除（如小剧场 &lt;snow&gt;...&lt;/snow&gt;）。<br>
+                            同时作用于时间线解析和向量检索，与向量设置中的同一选项联动。
+                        </p>
+                    </div>
                 </div>
                 <div class="horae-modal-footer">
                     <button class="horae-btn" id="horae-ai-scan-cancel">取消</button>
@@ -11027,10 +11076,13 @@ function showAIScanConfigDialog(targetCount) {
             const includeAffection = modal.querySelector('#horae-scan-include-affection').checked;
             const includeScene = modal.querySelector('#horae-scan-include-scene').checked;
             const includeRelationship = modal.querySelector('#horae-scan-include-relationship').checked;
+            const newStripTags = modal.querySelector('#horae-scan-strip-tags').value.trim();
             settings.aiScanIncludeNpc = includeNpc;
             settings.aiScanIncludeAffection = includeAffection;
             settings.aiScanIncludeScene = includeScene;
             settings.aiScanIncludeRelationship = includeRelationship;
+            settings.vectorStripTags = newStripTags;
+            $('#horae-setting-vector-strip-tags').val(newStripTags);
             saveSettings();
             modal.remove();
             resolve({ tokenLimit: Math.max(10000, val), includeNpc, includeAffection, includeScene, includeRelationship });
@@ -11366,8 +11418,10 @@ async function onMessageReceived(messageId) {
         
         isRegenerate = !!(message.horae_meta?.timestamp?.absolute);
         let savedFlags = null;
+        let savedGlobal = null;
         if (isRegenerate) {
             savedFlags = _saveCompressedFlags(message.horae_meta);
+            if (messageId === 0) savedGlobal = _saveGlobalMeta(message.horae_meta);
             message.horae_meta = createEmptyMeta();
         }
         
@@ -11375,6 +11429,7 @@ async function onMessageReceived(messageId) {
         
         if (isRegenerate) {
             _restoreCompressedFlags(message.horae_meta, savedFlags);
+            if (savedGlobal) _restoreGlobalMeta(message.horae_meta, savedGlobal);
             horaeManager.rebuildTableData();
             horaeManager.rebuildRelationships();
             horaeManager.rebuildLocationMemory();
@@ -11457,12 +11512,14 @@ function onMessageEdited(messageId) {
     const message = chat[messageId];
     if (!message || message.is_user) return;
     
-    // 保存摘要压缩标记后重置 meta，解析完再恢复
+    // 保存摘要压缩标记 + chat[0] 全局键后重置 meta，解析完再恢复
     const savedFlags = _saveCompressedFlags(message.horae_meta);
+    const savedGlobal = messageId === 0 ? _saveGlobalMeta(message.horae_meta) : null;
     message.horae_meta = createEmptyMeta();
     
     horaeManager.processAIResponse(messageId, message.mes);
     _restoreCompressedFlags(message.horae_meta, savedFlags);
+    if (savedGlobal) _restoreGlobalMeta(message.horae_meta, savedGlobal);
     
     horaeManager.rebuildTableData();
     horaeManager.rebuildRelationships();
@@ -11670,9 +11727,11 @@ function onSwipePanel(messageId) {
             if (!msg || msg.is_user) return;
             
             const savedFlags = _saveCompressedFlags(msg.horae_meta);
+            const savedGlobal = messageId === 0 ? _saveGlobalMeta(msg.horae_meta) : null;
             msg.horae_meta = createEmptyMeta();
             horaeManager.processAIResponse(messageId, msg.mes);
             _restoreCompressedFlags(msg.horae_meta, savedFlags);
+            if (savedGlobal) _restoreGlobalMeta(msg.horae_meta, savedGlobal);
             
             horaeManager.rebuildTableData();
             horaeManager.rebuildRelationships();

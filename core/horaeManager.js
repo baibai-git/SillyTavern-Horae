@@ -966,6 +966,21 @@ class HoraeManager {
         return '仇恨';
     }
 
+    /**
+     * 根据用户配置的标签列表（逗号分隔），
+     * 整段移除对应标签及其内容（含可选属性），
+     * 防止小剧场等自定义区块内的 horae 标签污染正文解析。
+     */
+    _stripCustomTags(text, tagList) {
+        if (!text || !tagList) return text;
+        const tags = tagList.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean);
+        for (const tag of tags) {
+            const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            text = text.replace(new RegExp(`<${escaped}(?:\\s[^>]*)?>[\\s\\S]*?</${escaped}>`, 'gi'), '');
+        }
+        return text;
+    }
+
     /** 解析AI回复中的horae标签 */
     parseHoraeTag(message) {
         if (!message) return null;
@@ -1670,13 +1685,14 @@ class HoraeManager {
             }
             if (info._userEdited) rebuilt[name] = { ...info };
         }
-        // 从消息重放 AI 写入的 scene_desc（按时间顺序，后覆盖前），跳过已删除的
+        // 从消息重放 AI 写入的 scene_desc（按时间顺序，后覆盖前），跳过已删除/用户编辑的
         for (let i = 1; i < chat.length; i++) {
             const meta = chat[i]?.horae_meta;
             const pairs = meta?.scene?._descPairs;
             if (pairs?.length > 0) {
                 for (const p of pairs) {
                     if (deletedNames.has(p.location)) continue;
+                    if (rebuilt[p.location]?._userEdited) continue;
                     rebuilt[p.location] = {
                         desc: p.desc,
                         firstSeen: rebuilt[p.location]?.firstSeen || new Date().toISOString(),
@@ -1686,6 +1702,7 @@ class HoraeManager {
             } else if (meta?.scene?.scene_desc && meta?.scene?.location) {
                 const loc = meta.scene.location;
                 if (deletedNames.has(loc)) continue;
+                if (rebuilt[loc]?._userEdited) continue;
                 rebuilt[loc] = {
                     desc: meta.scene.scene_desc,
                     firstSeen: rebuilt[loc]?.firstSeen || new Date().toISOString(),
@@ -1913,11 +1930,13 @@ class HoraeManager {
 
     /** 处理AI回复，解析标签并存储元数据 */
     processAIResponse(messageIndex, messageContent) {
-        let parsed = this.parseHoraeTag(messageContent);
+        // 根据用户配置的剔除标签，整块移除小剧场等自定义区块，防止其内部的 horae 标签污染正文解析
+        const cleanedContent = this._stripCustomTags(messageContent, this.settings?.vectorStripTags);
+        let parsed = this.parseHoraeTag(cleanedContent);
         
         // 标签解析失败时，自动 fallback 到宽松格式解析
         if (!parsed) {
-            parsed = this.parseLooseFormat(messageContent);
+            parsed = this.parseLooseFormat(cleanedContent);
             if (parsed) {
                 console.log(`[Horae] #${messageIndex} 未检测到标签，已通过宽松解析提取数据`);
             }

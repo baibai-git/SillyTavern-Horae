@@ -1285,7 +1285,8 @@ export class VectorManager {
         if (!mes) return '';
         let text = mes
             .replace(/<think>[\s\S]*?<\/think>/gi, '')
-            .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+            .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+            .replace(/<!--[\s\S]*?-->/g, '');
         if (stripTags) {
             const tags = stripTags.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean);
             for (const tag of tags) {
