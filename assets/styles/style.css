@@ -52,7 +52,10 @@
 .horae-modal select,
 .horae-modal-overlay input:not([type="checkbox"]):not([type="radio"]),
 .horae-modal-overlay textarea,
-.horae-modal-overlay select {
+.horae-modal-overlay select,
+.horae-tutorial-card input:not([type="checkbox"]):not([type="radio"]),
+.horae-tutorial-card textarea,
+.horae-tutorial-card select {
     background: var(--horae-bg) !important;
     color: var(--horae-text) !important;
     border-color: var(--horae-border) !important;
@@ -5057,6 +5060,138 @@ body .horae-context-menu {
     border-radius: 4px;
     background: var(--horae-bg-secondary, #1e1e2e);
     color: var(--horae-text, #e2e8f0);
+}
+
+/* ====== 新用户导航教学 ====== */
+.horae-tutorial-card {
+    margin: 8px 0;
+    border: 1px solid var(--horae-primary);
+    border-left: 3px solid var(--horae-primary);
+    border-radius: var(--horae-radius);
+    background: var(--horae-bg);
+    animation: horaeTutorialFadeIn 0.25s ease;
+    overflow: hidden;
+}
+
+@keyframes horaeTutorialFadeIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.horae-tutorial-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--horae-bg-secondary);
+    border-bottom: 1px solid var(--horae-border);
+}
+
+.horae-tutorial-card-head strong {
+    font-size: 13px;
+    color: var(--horae-text);
+}
+
+.horae-tutorial-step-indicator {
+    background: var(--horae-primary);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.horae-tutorial-card-body {
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.65;
+    color: var(--horae-text-muted);
+}
+
+.horae-tutorial-card-body strong {
+    color: var(--horae-text);
+}
+
+.horae-tutorial-card-body code {
+    background: rgba(124, 58, 237, 0.15);
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--horae-primary-light);
+}
+
+.horae-tutorial-card-foot {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px 8px;
+}
+
+.horae-tutorial-skip {
+    background: none;
+    border: none;
+    color: var(--horae-text-muted);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--horae-radius-sm);
+}
+
+.horae-tutorial-skip:hover {
+    color: var(--horae-text);
+}
+
+.horae-tutorial-next {
+    background: var(--horae-primary);
+    color: #fff;
+    border: none;
+    padding: 5px 14px;
+    border-radius: var(--horae-radius-sm);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.horae-tutorial-next:hover {
+    filter: brightness(1.15);
+}
+
+.horae-tutorial-highlight {
+    outline: 2px solid var(--horae-primary);
+    outline-offset: 2px;
+    border-radius: var(--horae-radius);
+    transition: outline-color 0.3s;
+}
+
+/* 重新开始教学按钮 */
+.horae-tutorial-restart-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    margin-top: 4px;
+    background: var(--horae-bg-secondary);
+    border: 1px solid var(--horae-border);
+    border-radius: var(--horae-radius);
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+
+.horae-tutorial-restart-section:hover {
+    border-color: var(--horae-primary);
+}
+
+.horae-tutorial-restart-section i {
+    color: var(--horae-primary-light);
+    font-size: 14px;
+}
+
+.horae-tutorial-restart-section span {
+    font-size: 12px;
+    color: var(--horae-text-muted);
 }
 
 /* === 自助美化工具 (Theme Designer) === */
