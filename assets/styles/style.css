@@ -1518,7 +1518,8 @@
 .horae-btn-add-item,
 .horae-btn-add-affection,
 .horae-btn-add-mood,
-.horae-btn-add-agenda-row {
+.horae-btn-add-agenda-row,
+.horae-btn-add-rep-subitem {
     align-self: flex-start;
     background: transparent;
     border: 1px dashed var(--horae-border);
@@ -1537,7 +1538,8 @@
 .horae-btn-add-item:hover,
 .horae-btn-add-affection:hover,
 .horae-btn-add-mood:hover,
-.horae-btn-add-agenda-row:hover {
+.horae-btn-add-agenda-row:hover,
+.horae-btn-add-rep-subitem:hover {
     border-color: var(--horae-primary);
     color: var(--horae-primary-light);
 }

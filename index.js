@@ -5739,7 +5739,7 @@ function _openRepSubItemsDialog(catIndex) {
             <div class="horae-modal-body">
                 <p style="margin-bottom:8px;opacity:.7;font-size:.9em;">细项名称（留空=AI自行发挥）。用于在声望面板下方显示更详细的声望组成。</p>
                 <div id="horae-rep-subitems-list"></div>
-                <button id="horae-rep-subitems-add" class="horae-icon-btn" style="margin-top:6px;"><i class="fa-solid fa-plus"></i> 添加细项</button>
+                <button id="horae-rep-subitems-add" class="horae-btn-add-rep-subitem"><i class="fa-solid fa-plus"></i> 添加细项</button>
             </div>
             <div class="horae-modal-footer">
                 <button id="horae-rep-subitems-ok" class="horae-btn primary">确定</button>
