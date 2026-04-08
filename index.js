@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.10.1
+ * 版本: 1.10.2
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -20,7 +20,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.10.1';
+const VERSION = '1.10.2';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -5322,11 +5322,14 @@ function updateRpgDisplay() {
         ...Object.keys(rpg.currency || {}),
     ]);
 
+    const _uoUserName = getContext().name1 || '';
+
     /** 构建单个角色的分页标签 HTML */
     function _buildCharTabs(name) {
         const tabs = [];
         const panels = [];
         const eid = name.replace(/[^a-zA-Z0-9]/g, '_');
+        const _isU = (name === _uoUserName);
         const attrs = rpg.attributes?.[name] || {};
         const skills = rpg.skills?.[name] || [];
         const charEq = rpg.equipment?.[name] || {};
@@ -5335,7 +5338,7 @@ function updateRpgDisplay() {
         const charLv = rpg.levels?.[name];
         const charXp = rpg.xp?.[name];
 
-        if (hasAttrModule) {
+        if (hasAttrModule && (!settings.rpgAttrsUserOnly || _isU)) {
             tabs.push({ id: `attr_${eid}`, label: '属性' });
             const hasAttrs = Object.keys(attrs).length > 0;
             const viewMode = settings.rpgAttrViewMode || 'radar';
@@ -5355,7 +5358,7 @@ function updateRpgDisplay() {
             html += '</div>';
             panels.push(html);
         }
-        if (sendSkills) {
+        if (sendSkills && (!settings.rpgSkillsUserOnly || _isU)) {
             tabs.push({ id: `skill_${eid}`, label: '技能' });
             let html = '';
             if (skills.length > 0) {
@@ -5373,7 +5376,7 @@ function updateRpgDisplay() {
             }
             panels.push(html);
         }
-        if (sendEq) {
+        if (sendEq && (!settings.rpgEquipmentUserOnly || _isU)) {
             tabs.push({ id: `eq_${eid}`, label: '装备' });
             let html = '';
             const slotEntries = Object.entries(charEq);
@@ -5393,7 +5396,7 @@ function updateRpgDisplay() {
             }
             panels.push(html);
         }
-        if (sendRep) {
+        if (sendRep && (!settings.rpgReputationUserOnly || _isU)) {
             tabs.push({ id: `rep_${eid}`, label: '声望' });
             let html = '';
             const catEntries = Object.entries(charRep);
@@ -5409,7 +5412,7 @@ function updateRpgDisplay() {
             panels.push(html);
         }
         // 等级/XP 现在直接显示在状态条上方，不再作为独立标签
-        if (sendCur) {
+        if (sendCur && (!settings.rpgCurrencyUserOnly || _isU)) {
             tabs.push({ id: `cur_${eid}`, label: '货币' });
             const denomConfig = rpg.currencyConfig?.denominations || [];
             let html = '<div class="horae-rpg-card-cur">';
@@ -5471,9 +5474,10 @@ function updateRpgDisplay() {
             const charLv = rpg.levels?.[name];
 
             if (!isPresent) continue;
+            const _isUser = (name === userName);
             barsHtml += '<div class="horae-rpg-char-block">';
 
-            if (sendBars) {
+            if (sendBars && (!settings.rpgBarsUserOnly || _isUser)) {
                 barsHtml += '<div class="horae-rpg-char-card horae-rpg-bar-card">';
                 // 角色名行: 名称 + 等级 + 状态图标 ...... 货币（右端）
                 barsHtml += '<div class="horae-rpg-bar-card-header">';
@@ -5675,6 +5679,9 @@ function renderReputationValues() {
     const rpg = horaeManager.getRpgStateAt(0);
     for (const name of Object.keys(rpg.bars || {})) allOwners.add(name);
 
+    const _repUO = !!settings.rpgReputationUserOnly;
+    const _userName = getContext().name1 || '';
+
     if (!allOwners.size) {
         section.innerHTML = '<div class="horae-rpg-skills-empty">暂无声望数据（AI回复后自动更新）</div>';
         return;
@@ -5682,6 +5689,7 @@ function renderReputationValues() {
 
     let html = '';
     for (const owner of allOwners) {
+        if (_repUO && owner !== _userName) continue;
         const ownerData = repValues[owner] || {};
         html += `<details class="horae-rpg-char-detail"><summary class="horae-rpg-char-summary"><span class="horae-rpg-char-detail-name">${escapeHtml(owner)} 声望</span></summary><div class="horae-rpg-char-detail-body">`;
         for (const cat of config.categories) {
@@ -5726,7 +5734,7 @@ function _openRepSubItemsDialog(catIndex) {
     const modal = document.createElement('div');
     modal.className = 'horae-modal-overlay';
     modal.innerHTML = `
-        <div class="horae-modal" style="max-width:400px;">
+        <div class="horae-modal-content" style="max-width:400px;width:92vw;box-sizing:border-box;">
             <div class="horae-modal-header"><h3>「${escapeHtml(cat.name)}」细项设置</h3></div>
             <div class="horae-modal-body">
                 <p style="margin-bottom:8px;opacity:.7;font-size:.9em;">细项名称（留空=AI自行发挥）。用于在声望面板下方显示更详细的声望组成。</p>
@@ -5979,6 +5987,8 @@ function renderEquipmentValues() {
     }
     const rpg = horaeManager.getRpgStateAt(0);
     const allOwners = new Set([...Object.keys(eqValues), ...Object.keys(cfgMap.perChar), ...Object.keys(rpg.bars || {})]);
+    const _eqUO = !!settings.rpgEquipmentUserOnly;
+    const _eqUserName = getContext().name1 || '';
 
     if (!allOwners.size) {
         section.innerHTML = '<div class="horae-rpg-skills-empty">暂无角色数据（AI 回复后自动更新，或手动添加）</div>';
@@ -5987,6 +5997,7 @@ function renderEquipmentValues() {
 
     let html = '';
     for (const owner of allOwners) {
+        if (_eqUO && owner !== _eqUserName) continue;
         const charCfg = _getCharEqConfig(owner);
         const ownerSlots = eqValues[owner] || {};
         const deletedSlots = new Set(charCfg._deletedSlots || []);
@@ -6753,11 +6764,14 @@ function renderLevelValues() {
     const mergedLevels = { ...(snapshot.levels || {}), ...(baseRpg.levels || {}) };
     const mergedXp = { ...(snapshot.xp || {}), ...(baseRpg.xp || {}) };
     const allNames = new Set([...Object.keys(mergedLevels), ...Object.keys(mergedXp), ...Object.keys(snapshot.bars || {})]);
+    const _lvUO = !!settings.rpgLevelUserOnly;
+    const _lvUserName = getContext().name1 || '';
     let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:6px;"><button class="horae-rpg-btn-sm horae-rpg-lv-add" title="手动添加角色等级"><i class="fa-solid fa-plus"></i> 添加角色</button></div>';
     if (!allNames.size) {
         html += '<div class="horae-rpg-skills-empty">暂无等级数据（AI 回复后自动更新，或点击上方按钮手动添加）</div>';
     }
     for (const name of allNames) {
+        if (_lvUO && name !== _lvUserName) continue;
         const lv = mergedLevels[name];
         const xp = mergedXp[name];
         const xpCur = xp ? xp[0] : 0;
@@ -6912,7 +6926,11 @@ function renderRpgHud(messageEl, messageIndex) {
     const present = meta?.scene?.characters_present || [];
     if (present.length === 0) return;
 
-    const chars = _matchPresentChars(present, rpg);
+    let chars = _matchPresentChars(present, rpg);
+    if (settings.rpgBarsUserOnly) {
+        const _huN = getContext().name1 || '';
+        chars = chars.filter(n => n === _huN);
+    }
     if (chars.length === 0) return;
 
     let html = '<div class="horae-rpg-hud">';
@@ -7020,7 +7038,11 @@ function _renderRpgHudFromSnapshot(messageEl, messageIndex, rpg) {
     const present = meta?.scene?.characters_present || [];
     if (present.length === 0) return;
 
-    const chars = _matchPresentChars(present, rpg);
+    let chars = _matchPresentChars(present, rpg);
+    if (settings.rpgBarsUserOnly) {
+        const _huN = getContext().name1 || '';
+        chars = chars.filter(n => n === _huN);
+    }
     if (chars.length === 0) return;
 
     let html = '<div class="horae-rpg-hud">';
