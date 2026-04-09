@@ -4,6 +4,7 @@
  */
 
 import { parseStoryDate, calculateRelativeTime, calculateDetailedRelativeTime, generateTimeReference, formatRelativeTime, formatFullDateTime } from '../utils/timeUtils.js';
+import { detectEffectiveAiLangIsZh } from './i18n.js';
 
 /**
  * @typedef {Object} HoraeTimestamp
@@ -116,6 +117,21 @@ class HoraeManager {
         this.settings = settings;
     }
 
+    /** 根据 AI 输出语言获取事件摘要的字数/字符限制描述 */
+    _getEventCharLimit() {
+        const lang = this.settings?.aiOutputLanguage || 'auto';
+        const eff = (lang === 'auto') ? (this.settings?.uiLanguage || 'auto') : lang;
+        if (eff === 'zh-CN' || eff === 'zh-TW' || eff === 'auto') return '30-50字';
+        if (eff === 'ko') return '50-80자';
+        if (eff === 'ja') return '40-70文字';
+        return '80-130 chars';
+    }
+
+    /** AI 输出语言是否为中文（简体/繁体/自动默认） */
+    _isAiOutputChinese() {
+        return detectEffectiveAiLangIsZh(this.settings);
+    }
+
     /** 获取当前聊天记录 */
     getChat() {
         return this.context?.chat || [];
@@ -194,9 +210,9 @@ class HoraeManager {
                         continue;
                     }
                     
-                    // 检测消耗状态标记，视为删除
-                    const consumedPatterns = /[\(（](已消耗|已用完|已销毁|消耗殆尽|消耗|用尽)[\)）]/;
-                    const holderConsumed = /^(消耗|已消耗|已用完|消耗殆尽|用尽|无)$/;
+                    // 检测消耗状态标记，视为删除（简繁中+英文兼容）
+                    const consumedPatterns = /[\(（](已消耗|已用完|已销毁|已銷毀|消耗殆尽|消耗殆盡|消耗|用尽|用盡|consumed|used\s*up|destroyed|depleted)[\)）]/i;
+                    const holderConsumed = /^(消耗|已消耗|已用完|消耗殆尽|消耗殆盡|用尽|用盡|无|無|consumed|used\s*up|depleted|none)$/i;
                     if (consumedPatterns.test(name) || holderConsumed.test(newInfo.holder || '')) {
                         const cleanName = name.replace(consumedPatterns, '').trim();
                         const baseName = getItemBaseName(cleanName || name);
@@ -629,7 +645,7 @@ class HoraeManager {
                 for (const [name, info] of unequipped) {
                     const id = info._id || '???';
                     const icon = info.icon || '';
-                    const imp = info.importance === '!!' ? '关键' : info.importance === '!' ? '重要' : '';
+                    const imp = (info.importance === '!!' || info.importance === '关键' || info.importance === '關鍵') ? '关键' : (info.importance === '!' || info.importance === '重要') ? '重要' : '';
                     const desc = info.description ? ` | ${info.description}` : '';
                     const holder = info.holder || '';
                     const loc = info.location ? `@${info.location}` : '';
@@ -916,9 +932,9 @@ class HoraeManager {
                 }
             }
 
-            // 据点
+            // 据点（直接从 chat[0] 读取，据点不参与消息累积式快照）
             if (!!this.settings?.sendRpgStronghold) {
-                const shNodes = rpg.strongholds || [];
+                const shNodes = this.getChat()?.[0]?.horae_meta?.rpg?.strongholds || [];
                 if (shNodes.length > 0) {
                     lines.push('\n[据点]');
                     function _shTreeStr(nodes, parentId, indent) {
@@ -957,7 +973,7 @@ class HoraeManager {
                 const currentDate = state.timestamp?.story_date || '';
                 
                 const getLevelMark = (level) => {
-                    if (level === '关键') return '★';
+                    if (level === '关键' || level === '關鍵') return '★';
                     if (level === '重要') return '●';
                     return '○';
                 };
@@ -1011,7 +1027,7 @@ class HoraeManager {
                 });
                 
                 const criticalAndImportant = sortedEvents.filter(e => 
-                    e.event?.level === '关键' || e.event?.level === '重要' || e.event?.level === '摘要' || e.event?.isSummary
+                    e.event?.level === '关键' || e.event?.level === '關鍵' || e.event?.level === '重要' || e.event?.level === '摘要' || e.event?.isSummary
                 );
                 const contextDepth = this.settings?.contextDepth ?? 15;
                 const normalAll = sortedEvents.filter(e => 
@@ -1335,7 +1351,7 @@ class HoraeManager {
                     const summary = parts.slice(1).join('|').trim();
                     
                     let level = '一般';
-                    if (levelRaw === '关键' || levelRaw.toLowerCase() === 'critical') {
+                    if (levelRaw === '关键' || levelRaw === '關鍵' || levelRaw.toLowerCase() === 'critical') {
                         level = '关键';
                     } else if (levelRaw === '重要' || levelRaw.toLowerCase() === 'important') {
                         level = '重要';
@@ -1607,12 +1623,12 @@ class HoraeManager {
             const str = line.substring(7).trim();
             const eq = str.indexOf('=');
             if (_uoB && eq < 0) {
-                rpg.status[_uoName] = (!str || /^(正常|无|none)$/i.test(str))
+                rpg.status[_uoName] = (!str || /^(正常|无|無|none|normal|clear)$/i.test(str))
                     ? [] : str.split('/').map(s => s.trim()).filter(Boolean);
             } else if (eq > 0) {
                 const owner = _uoB ? _uoName : str.substring(0, eq).trim();
                 const val = str.substring(eq + 1).trim();
-                rpg.status[owner] = (!val || /^(正常|无|none)$/i.test(val))
+                rpg.status[owner] = (!val || /^(正常|无|無|none|normal|clear)$/i.test(val))
                     ? [] : val.split('/').map(s => s.trim()).filter(Boolean);
             }
             return;
@@ -2046,6 +2062,8 @@ class HoraeManager {
         const oldEquipConfig = old.equipmentConfig || { locked: false, perChar: {} };
         // 保留货币配置
         const oldCurrencyConfig = old.currencyConfig || { denominations: [] };
+        // 保留据点数据（用户手动添加 + AI 累积）
+        const oldStrongholds = old.strongholds ? JSON.parse(JSON.stringify(old.strongholds)) : [];
 
         first.horae_meta.rpg = {
             bars: {}, status: {}, skills: {}, attributes: { ...userAttrs }, _deletedSkills: deletedSkills,
@@ -2053,6 +2071,7 @@ class HoraeManager {
             equipmentConfig: oldEquipConfig, equipment: {},
             levels: {}, xp: {},
             currencyConfig: oldCurrencyConfig, currency: {},
+            strongholds: oldStrongholds,
         };
         for (let i = 1; i < chat.length; i++) {
             const changes = chat[i]?.horae_meta?._rpgChanges;
@@ -3014,174 +3033,32 @@ class HoraeManager {
     }
 
     generateSystemPromptAddition() {
-        const userName = this.context?.name1 || '主角';
-        const charName = this.context?.name2 || '角色';
-        
+        const isZh = this._isAiOutputChinese();
+        const userName = this.context?.name1 || (isZh ? '主角' : 'protagonist');
+        const charName = this.context?.name2 || (isZh ? '角色' : 'character');
+
         if (this.settings?.customSystemPrompt) {
             const custom = this.settings.customSystemPrompt
                 .replace(/\{\{user\}\}/gi, userName)
                 .replace(/\{\{char\}\}/gi, charName);
             return custom + this.generateLocationMemoryPrompt() + this.generateCustomTablesPrompt() + this.generateRelationshipPrompt() + this.generateMoodPrompt() + this.generateRpgPrompt();
         }
-        
-        const sceneDescLine = this.settings?.sendLocationMemory ? '\nscene_desc:地点固定物理特征（见场景记忆规则，触发时才写）' : '';
-        const relLine = this.settings?.sendRelationships ? '\nrel:角色A>角色B=关系类型|备注（见关系网络规则，触发时才写）' : '';
-        const moodLine = this.settings?.sendMood ? '\nmood:角色名=情绪/心理状态（见情绪追踪规则，触发时才写）' : '';
-        return `
-【Horae记忆系统】（以下示例仅为示范，勿直接原句用于正文！）
 
-═══ 核心原则：变化驱动 ═══
-★★★ 在写<horae>标签前，先判断本回合哪些信息发生了实质变化 ★★★
-  ① 场景基础（time/location/characters/costume）→ 每回合必填
-  ② 其他所有字段 → 严格遵守各自的【触发条件】，无变化则完全不写该行
-  ③ 已记录的NPC/物品若无新信息 → 禁止输出！重复输出无变化的数据=浪费token
-  ④ 部分字段变化 → 使用增量更新，只写变化的部分
-  ⑤ NPC首次出场 → npc:和affection:两行都必须写！
+        let base = this.getDefaultSystemPrompt()
+            .replace(/\{\{user\}\}/gi, userName)
+            .replace(/\{\{char\}\}/gi, charName);
 
-═══ 标签格式 ═══
-每次回复末尾必须写入两个标签：
-<horae>
-time:日期 时间（必填）
-location:地点（必填。多级地点用·分隔，如「酒馆·大厅」「皇宫·王座间」。同一地点每次必须使用完全一致的名称）
-atmosphere:氛围${sceneDescLine}
-characters:在场角色名,逗号分隔（必填）
-costume:角色名=服装描述（必填，每人一行，禁止分号合并）
-item/item!/item!!:见物品规则（触发时才写）
-item-:物品名（物品消耗/丢失时删除。见物品规则，触发时才写）
-affection:角色名=好感度（★NPC首次出场必填初始值！之后仅好感变化时更新）
-npc:角色名|外貌=性格@关系~扩展字段（★NPC首次出场必填完整信息！之后仅变化时更新）
-agenda:日期|内容（新待办触发时才写）
-agenda-:内容关键词（待办已完成/失效时才写，系统自动移除匹配的待办）${relLine}${moodLine}
-</horae>
-<horaeevent>
-event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键，记录本条消息中的事件摘要，用于剧情追溯）
-</horaeevent>
+        const subs = this.generateLocationMemoryPrompt() + this.generateCustomTablesPrompt() +
+                     this.generateRelationshipPrompt() + this.generateMoodPrompt() +
+                     this.generateRpgPrompt() + this._generateAntiParaphrasePrompt();
 
-═══ 【物品】触发条件与规则 ═══
-参照[物品清单]中的编号(#ID)，严格按以下条件决定是否输出。
-
-【何时写】（满足任一条件才输出）
-  ✦ 获得新物品 → item:/item!:/item!!:
-  ✦ 已有物品的数量/归属/位置/性质发生改变 → item:（仅写变化部分）
-  ✦ 物品消耗/丢失/用完 → item-:物品名
-【何时不写】
-  ✗ 物品无任何变化 → 禁止输出任何item行
-  ✗ 物品仅被提及但无状态改变 → 不写
-
-【格式】
-  新获得：item:emoji物品名(数量)|描述=持有者@精确位置（可省略描述字段。除非该物品有特殊含意，如礼物、纪念品，则添加描述）
-  新获得(重要)：item!:emoji物品名(数量)|描述=持有者@精确位置（重要物品，描述必填：外观+功能+来源）
-  新获得(关键)：item!!:emoji物品名(数量)|描述=持有者@精确位置（关键道具，描述必须详细）
-  已有物品变化：item:emoji物品名(新数量)=新持有者@新位置（仅更新变化的部分，不写|则保留原描述）
-  消耗/丢失：item-:物品名
-
-【字段级规则】
-  · 描述：记录物品本质属性（外观/功能/来源），普通物品可省略，重要/关键物品首次必填
-    ★ 外观特征（颜色、材质、大小等，便于后续一致性描写）
-    ★ 功能/用途
-    ★ 来源（谁给的/如何获得）
-       - 示例（以下内容中若有示例仅为示范，勿直接原句用于正文！）：
-         - 示例1：item!:🌹永生花束|深红色玫瑰永生花，黑色缎带束扎，C赠送给U的情人节礼物=U@U房间书桌上
-         - 示例2：item!:🎫幸运十连抽券|闪着金光的纸质奖券，可在系统奖池进行一次十连抽的新手福利=U@空间戒指
-         - 示例3：item!!:🏧位面货币自动兑换机|看起来像个小型的ATM机，能按即时汇率兑换各位面货币=U@酒馆吧台
-  · 数量：单件不写(1)/(1个)/(1把)等，只有计量单位才写括号如(5斤)(1L)(1箱)
-  · 位置：必须是精确固定地点
-    ❌ 某某人身前地上、某某人脚边、某某人旁边、地板、桌子上
-    ✅ 酒馆大厅地板、餐厅吧台上、家中厨房、背包里、U的房间桌子上
-  · 禁止将固定家具和建筑设施计入物品
-  · 临时借用≠归属转移
-
-
-示例（麦酒生命周期）：
-  获得：item:🍺陈酿麦酒(50L)|杂物间翻出的麦酒，口感酸涩=U@酒馆后厨食材柜
-  量变：item:🍺陈酿麦酒(25L)=U@酒馆后厨食材柜
-  用完：item-:陈酿麦酒
-
-═══ 【NPC】触发条件与规则 ═══
-格式：npc:名|外貌=性格@与${userName}的关系~性别:值~年龄:值~种族:值~职业:值~生日:值
-分隔符：| 分名字，= 分外貌与性格，@ 分关系，~ 分扩展字段(key:value)
-
-【何时写】（满足任一条件才输出该NPC的npc:行）
-  ✦ 首次出场 → 完整格式，全部字段+全部~扩展字段（性别/年龄/种族/职业），缺一不可
-  ✦ 外貌永久变化（如受伤留疤、换了发型、穿戴改变）→ 只写外貌字段
-  ✦ 性格发生转变（如经历重大事件后性格改变）→ 只写性格字段
-  ✦ 与${userName}的关系定位改变（如从客人变成朋友）→ 只写关系字段
-  ✦ 获得关于该NPC的新信息（之前不知道的身高/体重等）→ 追加到对应字段
-  ✦ ~扩展字段本身发生变化（如职业变了）→ 只写变化的~扩展字段
-【何时不写】
-  ✗ NPC在场但无新信息 → 禁止写npc:行
-  ✗ NPC暂时离场后回来，信息无变化 → 禁止重写
-  ✗ 想用同义词/缩写重写已有描述 → 严禁！
-    ❌ "肌肉发达/满身战斗伤痕"→"肌肉强壮/伤疤"（换词≠更新）
-    ✅ "肌肉发达/满身战斗伤痕/重伤"→"肌肉发达/满身战斗伤痕"（伤愈，移除过时状态）
-
-【增量更新示例】（以NPC沃尔为例）
-  首次：npc:沃尔|银灰色披毛/绿眼睛/身高220cm/满身战斗伤痕=沉默寡言的重装佣兵@${userName}的第一个客人~性别:男~年龄:约35~种族:狼兽人~职业:佣兵
-  只更新关系：npc:沃尔|=@${userName}的男朋友
-  只追加外貌：npc:沃尔|银灰色披毛/绿眼睛/身高220cm/满身战斗伤痕/左臂绷带
-  只更新性格：npc:沃尔|=不再沉默/偶尔微笑
-  只改职业：npc:沃尔|~职业:退役佣兵
-（注意：未变化的字段和~扩展字段完全不写！系统自动保留原有数据！）
-
-【生日字段（可选扩展字段）】
-  格式：~生日:yyyy/mm/dd 或 ~生日:mm/dd（无年份时仅写月日）
-  ⚠ 仅当角色设定/人物描述中明确提及生日日期时才写！严禁猜测或捏造！
-  ⚠ 没有明确出处的生日一律不写此字段——留空由用户自行填写。
-
-【关系描述规范】
-  必须包含对象名且准确：❌客人 ✅${userName}的新访客 / ❌债主 ✅持有${userName}欠条的人 / ❌房东 ✅${userName}的房东 / ❌男朋友 ✅${userName}的男朋友 / ❌恩人 ✅救了${userName}一命的人 / ❌霸凌者 ✅欺负${userName}的人 / ❌暗恋者 ✅暗恋${userName}的人 / ❌仇人 ✅被${userName}杀掉了生父
-  附属关系需写出所属NPC名：✅伊凡的猎犬; ${userName}客人的宠物 / 伊凡的女朋友; ${userName}的客人 / ${userName}的闺蜜; 伊凡的妻子 / ${userName}的继父; 伊凡的父亲 / ${userName}的情夫; 伊凡的弟弟 / ${userName}的闺蜜; ${userName}的丈夫的情妇; 插足${userName}与伊凡夫妻关系的第三者
-
-═══ 【好感度】触发条件 ═══
-仅记录NPC对${userName}的好感度（禁止记录${userName}自己）。每人一行，禁止数值后加注解。
-
-【何时写】
-  ✦ NPC首次出场 → 按关系判定初始值（陌生0-20/熟人30-50/朋友50-70/恋人70-90）
-  ✦ 互动导致好感度实质变化 → affection:名=新总值
-【何时不写】
-  ✗ 好感度无变化 → 不写
-
-═══ 【待办事项】触发条件 ═══
-【何时写（新增）】
-  ✦ 剧情中出现新的约定/计划/行程/任务/伏笔 → agenda:日期|内容
-  格式：agenda:订立日期|内容（相对时间须括号标注绝对日期）
-  示例：agenda:2026/02/10|艾伦邀请${userName}情人节晚上约会(2026/02/14 18:00)
-【何时写（完成删除）— 极重要！】
-  ✦ 待办事项已完成/已失效/已取消 → 必须用 agenda-: 标记删除
-  格式：agenda-:待办内容（写入已完成事项的内容关键词即可自动移除）
-  示例：agenda-:艾伦邀请${userName}情人节晚上约会
-  ⚠ 严禁用 agenda:内容(完成) 这种方式！必须用 agenda-: 前缀！
-  ⚠ 严禁重复写入已存在的待办内容！
-【何时不写】
-  ✗ 已有待办无变化 → 禁止每回合重复已有待办
-  ✗ 待办已完成 → 禁止用 agenda: 加括号标注完成，必须用 agenda-:
-
-═══ 时间格式规则 ═══
-禁止"Day 1"/"第X天"等模糊格式，必须使用具体日历日期。
-- 现代：年/月/日 时:分（如 2026/2/4 15:00）
-- 历史：该年代日期（如 1920/3/15 14:00）
-- 奇幻/架空：该世界观日历（如 霜降月第三日 黄昏）
-${this.generateLocationMemoryPrompt()}${this.generateCustomTablesPrompt()}${this.generateRelationshipPrompt()}${this.generateMoodPrompt()}${this.generateRpgPrompt()}${this._generateAntiParaphrasePrompt()}
-═══ 最终强制提醒 ═══
-${this._generateMustTagsReminder()}
-
-【每回合必写字段——缺任何一项=不合格！】
-  ✅ time: ← 当前日期时间
-  ✅ location: ← 当前地点
-  ✅ atmosphere: ← 氛围
-  ✅ characters: ← 当前在场所有角色名，逗号分隔（绝对不能省略！）
-  ✅ costume: ← 每个在场角色各一行服装描述
-  ✅ event: ← 重要程度|事件摘要
-
-【NPC首次登场时额外必写——缺一不可！】
-  ✅ npc:名|外貌=性格@关系~性别:值~年龄:值~种族:值~职业:值~生日:值(仅已知时写，未知不写)
-  ✅ affection:该NPC名=初始好感度（陌生0-20/熟人30-50/朋友50-70/恋人70-90）
-
-以上字段不存在"可写可不写"的情况——它们是强制性的。
-`;
+        const marker = isZh ? '\n═══ 最终强制提醒 ═══' : '\n═══ Final Mandatory Reminder ═══';
+        base = base.replace(marker, subs + marker);
+        return '\n' + base;
     }
 
     getDefaultSystemPrompt() {
+        if (!this._isAiOutputChinese()) return this._getDefaultSystemPromptEn();
         const sceneDescLine = this.settings?.sendLocationMemory ? '\nscene_desc:地点固定物理特征（见场景记忆规则，触发时才写）' : '';
         const relLine = this.settings?.sendRelationships ? '\nrel:角色A>角色B=关系类型|备注（见关系网络规则，触发时才写）' : '';
         const moodLine = this.settings?.sendMood ? '\nmood:角色名=情绪/心理状态（见情绪追踪规则，触发时才写）' : '';
@@ -3211,7 +3088,7 @@ agenda:日期|内容（新待办触发时才写）
 agenda-:内容关键词（待办已完成/失效时才写，系统自动移除匹配的待办）${relLine}${moodLine}
 </horae>
 <horaeevent>
-event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键，记录本条消息中的事件摘要，用于剧情追溯）
+event:重要程度|事件简述（${this._getEventCharLimit()}，重要程度：一般/重要/关键，记录本条消息中的事件摘要，用于剧情追溯）
 </horaeevent>
 
 ═══ 【物品】触发条件与规则 ═══
@@ -3320,8 +3197,7 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
 - 奇幻/架空：该世界观日历（如 霜降月第三日 黄昏）
 
 ═══ 最终强制提醒 ═══
-你的回复末尾必须包含 <horae>...</horae> 和 <horaeevent>...</horaeevent> 两个标签。
-缺少任何一个标签=不合格。
+${this._generateMustTagsReminder()}
 
 【每回合必写字段——缺任何一项=不合格！】
   ✅ time: ← 当前日期时间
@@ -3338,7 +3214,164 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
 以上字段不存在"可写可不写"的情况——它们是强制性的。`;
     }
 
+    _getDefaultSystemPromptEn() {
+        const sceneDescLine = this.settings?.sendLocationMemory ? '\nscene_desc:fixed physical features of location (see Scene Memory rules, write only when triggered)' : '';
+        const relLine = this.settings?.sendRelationships ? '\nrel:CharA>CharB=relationship type|notes (see Relationship rules, write only when triggered)' : '';
+        const moodLine = this.settings?.sendMood ? '\nmood:character name=emotion/mental state (see Mood rules, write only when triggered)' : '';
+        return `[Horae Memory System] (Examples below are for demonstration only — do NOT copy them into your prose!)
+
+═══ Core Principle: Change-Driven ═══
+★★★ Before writing <horae> tags, determine which information ACTUALLY CHANGED this turn ★★★
+  ① Scene basics (time/location/characters/costume) → required every turn
+  ② All other fields → strictly follow their trigger conditions; if no change, do NOT write that line
+  ③ Already-recorded NPCs/items with no new info → do NOT output! Repeating unchanged data = wasting tokens
+  ④ Partial changes → use incremental updates, only write what changed
+  ⑤ NPC first appearance → both npc: and affection: lines are mandatory!
+
+═══ Tag Format ═══
+Append two tags at the end of every reply:
+<horae>
+time:date time (required)
+location:place (required. Use · to separate multi-level locations, e.g. "Tavern·Main Hall" "Palace·Throne Room". Always use the exact same name for the same place)
+atmosphere:atmosphere${sceneDescLine}
+characters:names of present characters, comma-separated (required)
+costume:character name=outfit description (required, one line per person, no semicolons)
+item/item!/item!!:see Item rules (only when triggered)
+item-:item name (remove consumed/lost items. See Item rules, only when triggered)
+affection:character name=affection value (★ required on NPC first appearance! Then only when value changes)
+npc:name|appearance=personality@relationship~extended fields (★ required on NPC first appearance! Then only when changed)
+agenda:date|content (only when new agenda is created)
+agenda-:content keywords (when agenda completed/expired, system auto-removes match)${relLine}${moodLine}
+</horae>
+<horaeevent>
+event:importance|summary (${this._getEventCharLimit()}, importance: normal/important/critical, summarize events in this message for plot tracking)
+</horaeevent>
+
+═══ [Items] Trigger Conditions & Rules ═══
+Refer to item IDs (#ID) in [Item List]. Only output when conditions below are met.
+
+[When to write] (output only if any condition is met)
+  ✦ Acquired new item → item:/item!:/item!!:
+  ✦ Existing item's quantity/owner/location/nature changed → item: (only changed parts)
+  ✦ Item consumed/lost/depleted → item-:item name
+[When NOT to write]
+  ✗ No item changes → do NOT output any item line
+  ✗ Item merely mentioned without state change → do NOT write
+
+[Format]
+  New: item:emoji item name(quantity)|description=owner@exact location (description optional unless item has special significance like a gift or memento)
+  New (important): item!:emoji item name(quantity)|description=owner@exact location (important item, description required: appearance+function+source)
+  New (critical): item!!:emoji item name(quantity)|description=owner@exact location (critical prop, detailed description required)
+  Existing item changed: item:emoji item name(new quantity)=new owner@new location (only update changed parts, omit | to keep original description)
+  Consumed/lost: item-:item name
+
+[Field-Level Rules]
+  · Description: record essential properties (appearance/function/source). Optional for normal items, required for important/critical items on first occurrence
+    ★ Visual features (color, material, size — for consistent future descriptions)
+    ★ Function/purpose
+    ★ Source (who gave it / how obtained)
+       - Examples (demonstrations only, do NOT copy into prose!):
+         - Ex1: item!:🌹Eternal Bouquet|deep red preserved roses tied with black satin ribbon, Valentine's gift from C to U=U@desk in U's room
+         - Ex2: item!:🎫Lucky 10-Pull Ticket|golden glowing paper voucher, one 10-pull in system gacha as beginner bonus=U@spatial ring
+         - Ex3: item!!:🏧Planar Currency ATM|looks like a small ATM, converts currencies across planes at live exchange rates=U@tavern counter
+  · Quantity: single items need no (1)/(1pc); only use parentheses for measurements like (5kg)(1L)(1 crate)
+  · Location: must be a specific fixed place
+    ❌ on the ground in front of someone, beside someone, on the floor, on the table
+    ✅ tavern main hall floor, restaurant counter, home kitchen, backpack, on desk in U's room
+  · Do NOT list fixed furniture and building fixtures as items
+  · Temporary borrowing ≠ ownership transfer
+
+
+Example (ale lifecycle):
+  Acquire: item:🍺Aged Ale(50L)|old ale found in storage, slightly sour taste=U@tavern kitchen pantry
+  Quantity change: item:🍺Aged Ale(25L)=U@tavern kitchen pantry
+  Depleted: item-:Aged Ale
+
+═══ [NPC] Trigger Conditions & Rules ═══
+Format: npc:name|appearance=personality@relationship with {{user}}~gender:value~age:value~race:value~occupation:value~birthday:value
+Delimiters: | separates name, = separates appearance and personality, @ separates relationship, ~ separates extended fields (key:value)
+
+[When to write] (output NPC's npc: line only if any condition is met)
+  ✦ First appearance → full format with ALL fields and ALL ~extended fields (gender/age/race/occupation), none may be omitted
+  ✦ Permanent appearance change (scar, new hairstyle, etc.) → only write appearance field
+  ✦ Personality shift (after a major event) → only write personality field
+  ✦ Relationship with {{user}} changed (customer → friend) → only write relationship field
+  ✦ New info learned about this NPC (previously unknown height/weight) → append to relevant field
+  ✦ ~Extended field itself changed (occupation changed) → only write changed ~extended field
+[When NOT to write]
+  ✗ NPC present but no new information → do NOT write npc: line
+  ✗ NPC returns after absence with no changes → do NOT rewrite
+  ✗ Want to paraphrase existing description with synonyms → strictly forbidden!
+    ❌ "muscular/battle-scarred" → "strong/scarred" (paraphrasing ≠ updating)
+    ✅ "muscular/battle-scarred/severely wounded" → "muscular/battle-scarred" (healed, remove outdated status)
+
+[Incremental Update Examples] (using NPC "Wolf" as example)
+  First: npc:Wolf|silver-grey fur/green eyes/220cm tall/battle scars=stoic heavy infantry mercenary@{{user}}'s first customer~gender:male~age:~35~race:wolf beastman~occupation:mercenary
+  Relationship only: npc:Wolf|=@{{user}}'s boyfriend
+  Append appearance: npc:Wolf|silver-grey fur/green eyes/220cm tall/battle scars/left arm bandaged
+  Personality only: npc:Wolf|=no longer stoic/occasionally smiles
+  Occupation only: npc:Wolf|~occupation:retired mercenary
+(Note: Do NOT write unchanged fields and ~extended fields! System automatically preserves original data!)
+
+[Birthday Field (optional extended field)]
+  Format: ~birthday:yyyy/mm/dd or ~birthday:mm/dd (month/day only when year is unknown)
+  ⚠ Only write when birthday is EXPLICITLY stated in character settings/description! Absolutely NO guessing or fabricating!
+  ⚠ If birthday has no explicit source, do NOT write this field — leave it for the user to fill in manually.
+
+[Relationship Description Rules]
+  Must include the target name and be accurate: ❌customer ✅{{user}}'s new visitor / ❌creditor ✅person holding {{user}}'s debt / ❌landlord ✅{{user}}'s landlord / ❌boyfriend ✅{{user}}'s boyfriend / ❌savior ✅person who saved {{user}}'s life / ❌bully ✅person who bullies {{user}} / ❌secret admirer ✅person secretly in love with {{user}} / ❌enemy ✅person whose father was killed by {{user}}
+  For subordinate relationships include the NPC name: ✅Ivan's hound; {{user}}'s customer's pet / Ivan's girlfriend; {{user}}'s customer / {{user}}'s best friend; Ivan's wife / {{user}}'s stepfather; Ivan's father / {{user}}'s lover; Ivan's brother / {{user}}'s best friend; {{user}}'s husband's mistress; the third party disrupting {{user}} and Ivan's marriage
+
+═══ [Affection] Trigger Conditions ═══
+Only record NPC's affection toward {{user}} (never record {{user}} themselves). One line per person. No annotations after the number.
+
+[When to write]
+  ✦ NPC first appears → set initial value based on relationship (stranger 0-20 / acquaintance 30-50 / friend 50-70 / lover 70-90)
+  ✦ Interaction causes meaningful affection change → affection:name=new total
+[When NOT to write]
+  ✗ Affection unchanged → do not write
+
+═══ [Agenda] Trigger Conditions ═══
+[When to write (new)]
+  ✦ New appointment/plan/schedule/quest/foreshadowing in plot → agenda:date|content
+  Format: agenda:date established|content (relative time must include absolute date in parentheses)
+  Example: agenda:2026/02/10|Allen invited {{user}} for a Valentine's dinner date (2026/02/14 18:00)
+[When to write (completion removal) — critical!]
+  ✦ Agenda completed/expired/cancelled → MUST use agenda-: to mark deletion
+  Format: agenda-:content (write keywords of completed item, system auto-removes match)
+  Example: agenda-:Allen invited {{user}} for a Valentine's dinner date
+  ⚠ Do NOT use agenda:content(done)! MUST use agenda-: prefix!
+  ⚠ Do NOT duplicate existing agenda content!
+[When NOT to write]
+  ✗ Existing agenda unchanged → do NOT repeat each turn
+  ✗ Agenda completed → do NOT mark done with agenda: parentheses, MUST use agenda-:
+
+═══ Time Format Rules ═══
+Do NOT use "Day 1"/"Day X" or similar vague formats. Use specific calendar dates.
+- Modern: Year/Month/Day Hour:Minute (e.g. 2026/2/4 15:00)
+- Historical: Period-appropriate date (e.g. 1920/3/15 14:00)
+- Fantasy/fictional: That world's calendar (e.g. Third Day of Frostfall, dusk)
+
+═══ Final Mandatory Reminder ═══
+${this._generateMustTagsReminder()}
+
+[Required fields every turn — missing any = fail!]
+  ✅ time: ← current date and time
+  ✅ location: ← current location
+  ✅ atmosphere: ← atmosphere
+  ✅ characters: ← all present character names, comma-separated (must NOT be omitted!)
+  ✅ costume: ← one line of outfit description per present character
+  ✅ event: ← importance|event summary
+
+[Additional required on NPC's first appearance — all mandatory!]
+  ✅ npc:name|appearance=personality@relationship~gender:value~age:value~race:value~occupation:value~birthday:value (only when known; if unknown, omit)
+  ✅ affection:NPC name=initial affection (stranger 0-20 / acquaintance 30-50 / friend 50-70 / lover 70-90)
+
+These fields are NOT optional — they are mandatory.`;
+    }
+
     getDefaultTablesPrompt() {
+        if (!this._isAiOutputChinese()) return this._getDefaultTablesPromptEn();
         return `═══ 自定义表格规则 ═══
 上方有用户自定义表格，根据"填写要求"填写数据。
 ★ 格式：<horaetable:表格名> 标签内，每行一个单元格 → 行,列:内容
@@ -3352,7 +3385,22 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
   - 新增行请在现有最大行号之后追加，新增列请在现有最大列号之后追加`;
     }
 
+    _getDefaultTablesPromptEn() {
+        return `═══ Custom Table Rules ═══
+There are user-defined tables above. Fill in data according to the "Fill Requirements".
+★ Format: Inside <horaetable:table name> tags, one cell per line → row,col:content
+★★ Coordinates: Row 0 and Column 0 are headers. Data starts from 1,1. Row number = data row index, column number = data column index
+★★★ Filling Rules ★★★
+  - Empty cell with relevant plot info available → MUST fill! Do not miss!
+  - Existing content with no change → do not rewrite
+  - No relevant plot info for this row/col → leave empty
+  - Do NOT output "(empty)" "-" "none" as placeholders
+  - 🔒 marked rows/columns are read-only, do NOT modify their content
+  - New rows: append after the current max row number; new columns: append after the current max column number`;
+    }
+
     getDefaultLocationPrompt() {
+        if (!this._isAiOutputChinese()) return this._getDefaultLocationPromptEn();
         return `═══ 【场景记忆】触发条件 ═══
 格式：scene_desc:位于…。该地点的固定物理特征描述（50-150字）
 场景记忆记录地点的核心布局和永久性特征（建筑结构、固定家具、空间特点），用于保持跨回合的场景描写一致性。
@@ -3384,6 +3432,37 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
   · 上方[场景记忆|...]是系统已记录的该地点特征，描写该场景时保持这些核心要素不变，同时根据时间/季节/剧情自由发挥变化细节`;
     }
 
+    _getDefaultLocationPromptEn() {
+        return `═══ [Scene Memory] Trigger Conditions ═══
+Format: scene_desc:Located at... Fixed physical features of this location (120-300 chars)
+Scene Memory records a location's core layout and permanent features (architectural structure, fixed furniture, spatial characteristics) to maintain consistent scene descriptions across turns.
+
+[Location / "Located at" Format] ★★★ Strictly follow hierarchy rules ★★★
+  · Start description with "Located at" to indicate this location's position relative to its parent, then describe its own physical features
+  · Sub-locations (names containing · separator): "Located at" only describes position within the parent building (which floor, which direction). Absolutely NO external geographic info of the parent
+  · Parent/top-level locations: "Located at" describes external geographic position (which continent, near which forest)
+  · System automatically sends parent description to AI; sub-locations must NOT repeat parent info
+    ✓ Nameless Tavern·Room 203 → scene_desc:Located on 2nd floor east side. Corner room, good lighting, single wooden bed against wall, east-facing window
+    ✓ Nameless Tavern·Main Hall → scene_desc:Located on 1st floor. High-ceilinged wooden space, long bar counter in center, scattered round tables
+    ✓ Nameless Tavern → scene_desc:Located at the edge of XX Forest in northern OO Continent. Two-story wood-and-stone structure, ground floor hall and bar, upper floor guest rooms
+    ✗ Nameless Tavern·Room 203 → scene_desc:Located at the edge of XX Forest in northern OO Continent's Nameless Tavern 2nd floor... (❌ sub-location must NOT include parent's external geography)
+[Location Name Rules]
+  · Use · to separate multi-level locations: Building·Area (e.g. "Nameless Tavern·Main Hall" "Palace·Dungeon")
+  · Same location must always use the exact same name as shown in [Scene|...] above; no abbreviations or rewording
+  · Same-named areas in different buildings are recorded independently
+[When to write]
+  ✦ First arrival at a new location → MUST write scene_desc with fixed physical features
+  ✦ Permanent physical change to location (destruction, renovation) → write updated scene_desc
+[When NOT to write]
+  ✗ Returning to a recorded location with no physical changes → do not write
+  ✗ Season/weather/atmosphere changes → do not write (these are temporary, not fixed features)
+[Description Rules]
+  · Only write fixed/permanent physical features: spatial structure, building materials, fixed furniture, window orientation, landmark decorations
+  · Do NOT write temporary states: current lighting, weather, crowds, seasonal decorations, temporarily placed items
+  · Do NOT copy scene memory text verbatim into prose; use it as background reference and rewrite based on current time/weather/lighting/character perspective
+  · [Scene Memory|...] above contains system-recorded features of this location; maintain these core elements while freely varying details based on time/season/plot`;
+    }
+
     generateLocationMemoryPrompt() {
         if (!this.settings?.sendLocationMemory) return '';
         const custom = this.settings?.customLocationPrompt;
@@ -3404,18 +3483,24 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
         if (allTables.length === 0) return '';
 
         let prompt = '\n' + (this.settings?.customTablesPrompt || this.getDefaultTablesPrompt());
+        const isZh = this._isAiOutputChinese();
 
-        // 为每个表格生成带坐标的示例
         for (const table of allTables) {
-            const tableName = table.name || '自定义表格';
+            const tableName = table.name || (isZh ? '自定义表格' : 'Custom Table');
             const rows = table.rows || 2;
             const cols = table.cols || 2;
-            prompt += `\n★ 表格「${tableName}」尺寸：${rows - 1}行×${cols - 1}列（数据区行号1-${rows - 1}，列号1-${cols - 1}）`;
-            prompt += `\n示例（填写空单元格或更新有变化的单元格）：
+            prompt += isZh
+                ? `\n★ 表格「${tableName}」尺寸：${rows - 1}行×${cols - 1}列（数据区行号1-${rows - 1}，列号1-${cols - 1}）`
+                : `\n★ Table "${tableName}" size: ${rows - 1} rows × ${cols - 1} cols (data area: rows 1-${rows - 1}, cols 1-${cols - 1})`;
+            const sA = isZh ? '内容A' : 'ContentA';
+            const sB = isZh ? '内容B' : 'ContentB';
+            const sC = isZh ? '内容C' : 'ContentC';
+            const exLabel = isZh ? '示例（填写空单元格或更新有变化的单元格）' : 'Example (fill empty cells or update changed cells)';
+            prompt += `\n${exLabel}：
 <horaetable:${tableName}>
-1,1:内容A
-1,2:内容B
-2,1:内容C
+1,1:${sA}
+1,2:${sB}
+2,1:${sC}
 </horaetable>`;
             break;
         }
@@ -3425,6 +3510,29 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
 
     getDefaultRelationshipPrompt() {
         const userName = this.context?.name1 || '{{user}}';
+        if (!this._isAiOutputChinese()) {
+            return `═══ [Relationship Network] Trigger Conditions ═══
+Format: rel:CharA>CharB=relationship type|notes
+System automatically records and displays the relationship network between characters. Output when relationships change.
+
+[When to write] (output only if any condition is met)
+  ✦ Two characters establish/define a new relationship → rel:CharA>CharB=relationship type
+  ✦ Existing relationship changes (colleague → friend) → rel:CharA>CharB=new relationship type
+  ✦ Important details to note about the relationship → add |notes
+[When NOT to write]
+  ✗ Relationship unchanged → do not write
+  ✗ Already recorded relationship with no update → do not write
+
+[Rules]
+  · CharA and CharB must both use accurate full names
+  · Relationship type: use concise terms — friend, lover, superior-subordinate, mentor-student, rival, partner, etc.
+  · Notes field is optional, for recording special details about the relationship
+  · Relationships involving ${userName} must also be recorded
+  Examples:
+    rel:${userName}>Wolf=employer-client|${userName} runs a tavern, Wolf is a regular
+    rel:Wolf>Ella=secret crush|Wolf has feelings for Ella but hasn't confessed
+    rel:${userName}>Ella=best friends`;
+        }
         return `═══ 【关系网络】触发条件 ═══
 格式：rel:角色A>角色B=关系类型|备注
 系统会自动记录和显示角色间的关系网络，当角色间关系发生变化时输出。
@@ -3449,6 +3557,21 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
     }
 
     getDefaultMoodPrompt() {
+        if (!this._isAiOutputChinese()) {
+            return `═══ [Mood / Mental State Tracking] Trigger Conditions ═══
+Format: mood:character name=emotional state (concise phrases, e.g. "nervous/uneasy", "happy/excited", "angry", "calm but wary")
+System tracks emotional changes of present characters to maintain psychological consistency.
+
+[When to write] (output only if any condition is met)
+  ✦ Character's emotion changes significantly (calm → angry) → mood:character name=new emotion
+  ✦ Character's first appearance with a notable emotional state → mood:character name=current emotion
+[When NOT to write]
+  ✗ Character's emotion unchanged → do not write
+  ✗ Character not present → do not write
+[Rules]
+  · Use 1-4 words for emotion description, use / to separate compound emotions
+  · Only record emotions of present characters`;
+        }
         return `═══ 【情绪/心理状态追踪】触发条件 ═══
 格式：mood:角色名=情绪状态（简洁词组，如"紧张/不安"、"开心/期待"、"愤怒"、"平静但警惕"）
 系统会追踪在场角色的情绪变化，帮助保持角色心理状态的连贯性。
@@ -3477,7 +3600,20 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
 
     _generateAntiParaphrasePrompt() {
         if (!this.settings?.antiParaphraseMode) return '';
-        const userName = this.context?.name1 || '主角';
+        const isZh = this._isAiOutputChinese();
+        const userName = this.context?.name1 || (isZh ? '主角' : 'protagonist');
+        if (!isZh) {
+            return `
+═══ Anti-Paraphrase Mode ═══
+The user writes ${userName}'s actions/dialogue themselves in USER messages; you (AI) do NOT repeat ${userName}'s parts.
+Therefore, when writing this turn's <horae> tags, you MUST also include events from "the USER message immediately preceding your reply":
+  ✦ Items acquired/consumed in USER message → write corresponding item:/item-: lines
+  ✦ Scene transitions in USER message → update location:
+  ✦ NPC interactions/affection changes in USER message → update affection:
+  ✦ Plot progression in USER message → include in <horaeevent> summary
+  ✦ In short: this <horae> must cover ALL changes from BOTH "the previous USER message" AND "your current AI reply"
+`;
+        }
         return `
 ═══ 反转述模式（Anti-Paraphrase） ═══
 当前用户使用反转述写法：${userName}的行动/对话由${userName}自行在USER消息中描写，你（AI）不再重复描述${userName}的部分。
@@ -3506,9 +3642,10 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
         if (!this.settings?.rpgMode) return '';
         // 自定义提示词优先
         if (this.settings.customRpgPrompt) {
+            const isZh = this._isAiOutputChinese();
             return '\n' + this.settings.customRpgPrompt
-                .replace(/\{\{user\}\}/gi, this.context?.name1 || '主角')
-                .replace(/\{\{char\}\}/gi, this.context?.name2 || 'AI');
+                .replace(/\{\{user\}\}/gi, this.context?.name1 || (isZh ? '主角' : 'protagonist'))
+                .replace(/\{\{char\}\}/gi, this.context?.name2 || (isZh ? '角色' : 'character'));
         }
         return '\n' + this.getDefaultRpgPrompt();
     }
@@ -3524,7 +3661,8 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
         const sendCur = !!this.settings?.sendRpgCurrency;
         const sendSh = !!this.settings?.sendRpgStronghold;
         if (!sendBars && !sendSkills && !sendAttrs && !sendEq && !sendRep && !sendLvl && !sendCur && !sendSh) return '';
-        const userName = this.context?.name1 || '主角';
+        const isZh = this._isAiOutputChinese();
+        const userName = this.context?.name1 || (isZh ? '主角' : 'protagonist');
         const uoBars = !!this.settings?.rpgBarsUserOnly;
         const uoSkills = !!this.settings?.rpgSkillsUserOnly;
         const uoAttrs = !!this.settings?.rpgAttrsUserOnly;
@@ -3538,53 +3676,74 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
             { key: 'hp', name: 'HP' }, { key: 'mp', name: 'MP' }, { key: 'sp', name: 'SP' }
         ];
         const attrCfg = this.settings?.rpgAttributeConfig || [];
-        let p = `═══ 【RPG】 ═══\n你的回复末尾必须包含<horaerpg>标签。`;
+        const own = isZh ? '归属' : 'owner';
+        let p = isZh
+            ? `═══ 【RPG】 ═══\n你的回复末尾必须包含<horaerpg>标签。`
+            : `═══ [RPG] ═══\nYour reply MUST include a <horaerpg> tag at the end.`;
         if (allUo) {
-            p += `所有RPG数据仅追踪${userName}一人，格式中不含归属字段。禁止为NPC输出任何RPG行。\n`;
+            p += isZh
+                ? `所有RPG数据仅追踪${userName}一人，格式中不含归属字段。禁止为NPC输出任何RPG行。\n`
+                : `All RPG data tracks ${userName} only. Format has no owner field. Do NOT output RPG lines for NPCs.\n`;
         } else if (anyUo) {
-            p += `归属格式同NPC编号：N编号 全名，${userName}直接写名字不加N。部分模块仅追踪${userName}（以下会标注）。\n`;
+            p += isZh
+                ? `归属格式同NPC编号：N编号 全名，${userName}直接写名字不加N。部分模块仅追踪${userName}（以下会标注）。\n`
+                : `Owner format follows NPC numbering: N## full name. ${userName} uses name directly without N. Some modules track ${userName} only (marked below).\n`;
         } else {
-            p += `归属格式同NPC编号：N编号 全名，${userName}直接写名字不加N。\n`;
+            p += isZh
+                ? `归属格式同NPC编号：N编号 全名，${userName}直接写名字不加N。\n`
+                : `Owner format follows NPC numbering: N## full name. ${userName} uses name directly without N.\n`;
         }
         if (sendBars) {
-            p += `\n【属性条——每回合必写，缺少=不合格！】\n`;
+            p += isZh ? `\n【属性条——每回合必写，缺少=不合格！】\n` : `\n[Status Bars — required every turn, missing = fail!]\n`;
             if (uoBars) {
-                p += `仅输出${userName}的属性条和状态：\n`;
+                p += isZh ? `仅输出${userName}的属性条和状态：\n` : `Only output ${userName}'s status bars and status:\n`;
                 for (const bar of barCfg) {
-                    p += `  ✅ ${bar.key}:当前/最大(${bar.name})  ← 首次必须标注显示名\n`;
+                    p += isZh
+                        ? `  ✅ ${bar.key}:当前/最大(${bar.name})  ← 首次必须标注显示名\n`
+                        : `  ✅ ${bar.key}:current/max(${bar.name})  ← must label display name on first use\n`;
                 }
-                p += `  ✅ status:效果1/效果2  ← 无异常写 正常\n`;
+                p += isZh ? `  ✅ status:效果1/效果2  ← 无异常写 正常\n` : `  ✅ status:effect1/effect2  ← if no ailments write normal\n`;
             } else {
-                p += `必须为 characters: 中每个在场角色输出全部属性条和状态：\n`;
+                p += isZh
+                    ? `必须为 characters: 中每个在场角色输出全部属性条和状态：\n`
+                    : `MUST output ALL status bars and status for EVERY present character in characters: list:\n`;
                 for (const bar of barCfg) {
-                    p += `  ✅ ${bar.key}:归属=当前/最大(${bar.name})  ← 首次必须标注显示名\n`;
+                    p += isZh
+                        ? `  ✅ ${bar.key}:归属=当前/最大(${bar.name})  ← 首次必须标注显示名\n`
+                        : `  ✅ ${bar.key}:${own}=current/max(${bar.name})  ← must label display name on first use\n`;
                 }
-                p += `  ✅ status:归属=效果1/效果2  ← 无异常写 =正常\n`;
+                p += isZh ? `  ✅ status:归属=效果1/效果2  ← 无异常写 =正常\n` : `  ✅ status:${own}=effect1/effect2  ← if no ailments write =normal\n`;
             }
-            p += `规则：\n`;
-            p += `  - 战斗/受伤/施法/消耗 → 合理扣减；恢复/休息 → 合理回增\n`;
+            p += isZh ? `规则：\n` : `Rules:\n`;
+            p += isZh
+                ? `  - 战斗/受伤/施法/消耗 → 合理扣减；恢复/休息 → 合理回增\n`
+                : `  - Combat/injury/casting/consumption → reasonable deduction; recovery/rest → reasonable increase\n`;
             if (!uoBars) {
-                p += `  - 每个在场角色的每个属性条都必须写，漏写任何一人=不合格\n`;
+                p += isZh
+                    ? `  - 每个在场角色的每个属性条都必须写，漏写任何一人=不合格\n`
+                    : `  - Every present character's every status bar MUST be written; missing anyone = fail\n`;
             }
-            p += `  - 即使本回合数值无变化，也必须写出当前值\n`;
+            p += isZh
+                ? `  - 即使本回合数值无变化，也必须写出当前值\n`
+                : `  - Even if values didn't change this turn, MUST still write current values\n`;
         }
         if (sendAttrs && attrCfg.length > 0) {
-            p += `\n【多维属性】仅首次登场或属性变化时写，无变化可省略\n`;
+            p += isZh ? `\n【多维属性】仅首次登场或属性变化时写，无变化可省略\n` : `\n[Multi-Dimensional Attributes] Write only on first appearance or attribute change; skip if unchanged\n`;
             if (uoAttrs) {
-                p += `  attr:${attrCfg.map(a => `${a.key}=数值`).join('|')}\n`;
+                p += `  attr:${attrCfg.map(a => `${a.key}=value`).join('|')}\n`;
             } else {
-                p += `  attr:归属|${attrCfg.map(a => `${a.key}=数值`).join('|')}\n`;
+                p += `  attr:${own}|${attrCfg.map(a => `${a.key}=value`).join('|')}\n`;
             }
-            p += `  数值范围0-100。属性含义：${attrCfg.map(a => `${a.key}(${a.name})`).join('、')}\n`;
+            p += isZh
+                ? `  数值范围0-100。属性含义：${attrCfg.map(a => `${a.key}(${a.name})`).join('、')}\n`
+                : `  Value range 0-100. Attribute meanings: ${attrCfg.map(a => `${a.key}(${a.name})`).join(', ')}\n`;
         }
         if (sendSkills) {
-            p += `\n【技能】仅习得/升级/失去时写，无变化可省略\n`;
+            p += isZh ? `\n【技能】仅习得/升级/失去时写，无变化可省略\n` : `\n[Skills] Write only when learned/upgraded/lost; skip if unchanged\n`;
             if (uoSkills) {
-                p += `  skill:技能名|等级|效果描述\n`;
-                p += `  skill-:技能名\n`;
+                p += isZh ? `  skill:技能名|等级|效果描述\n  skill-:技能名\n` : `  skill:skill name|level|effect description\n  skill-:skill name\n`;
             } else {
-                p += `  skill:归属|技能名|等级|效果描述\n`;
-                p += `  skill-:归属|技能名\n`;
+                p += isZh ? `  skill:归属|技能名|等级|效果描述\n  skill-:归属|技能名\n` : `  skill:${own}|skill name|level|effect description\n  skill-:${own}|skill name\n`;
             }
         }
         if (sendEq) {
@@ -3593,104 +3752,113 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
             const present = new Set(this.getLatestState()?.scene?.characters_present || []);
             const hasAnySlots = Object.values(perChar).some(c => c.slots?.length > 0);
             if (hasAnySlots) {
-                p += `\n【装备】角色穿戴/卸下装备时写，无变化可省略\n`;
+                p += isZh ? `\n【装备】角色穿戴/卸下装备时写，无变化可省略\n` : `\n[Equipment] Write when character equips/unequips; skip if unchanged\n`;
                 if (uoEq) {
-                    p += `  equip:格位名|装备名|属性1=值,属性2=值\n`;
-                    p += `  unequip:格位名|装备名\n`;
+                    p += isZh
+                        ? `  equip:格位名|装备名|属性1=值,属性2=值\n  unequip:格位名|装备名\n`
+                        : `  equip:slot name|item name|stat1=value,stat2=value\n  unequip:slot name|item name\n`;
                     const userCfg = perChar[userName];
                     if (userCfg?.slots?.length) {
-                        const slotNames = userCfg.slots.map(s => `${s.name}(×${s.maxCount ?? 1})`).join('、');
-                        p += `  格位: ${slotNames}\n`;
+                        const sep = isZh ? '、' : ', ';
+                        const slotNames = userCfg.slots.map(s => `${s.name}(×${s.maxCount ?? 1})`).join(sep);
+                        p += isZh ? `  格位: ${slotNames}\n` : `  Slots: ${slotNames}\n`;
                     }
                 } else {
-                    p += `  equip:归属|格位名|装备名|属性1=值,属性2=值\n`;
-                    p += `  unequip:归属|格位名|装备名\n`;
-                    for (const [owner, cfg] of Object.entries(perChar)) {
+                    p += isZh
+                        ? `  equip:归属|格位名|装备名|属性1=值,属性2=值\n  unequip:归属|格位名|装备名\n`
+                        : `  equip:${own}|slot name|item name|stat1=value,stat2=value\n  unequip:${own}|slot name|item name\n`;
+                    for (const [o, cfg] of Object.entries(perChar)) {
                         if (!cfg.slots?.length) continue;
-                        if (present.size > 0 && !present.has(owner)) continue;
-                        const slotNames = cfg.slots.map(s => `${s.name}(×${s.maxCount ?? 1})`).join('、');
-                        p += `  ${owner} 格位: ${slotNames}\n`;
+                        if (present.size > 0 && !present.has(o)) continue;
+                        const sep = isZh ? '、' : ', ';
+                        const slotNames = cfg.slots.map(s => `${s.name}(×${s.maxCount ?? 1})`).join(sep);
+                        p += isZh ? `  ${o} 格位: ${slotNames}\n` : `  ${o} slots: ${slotNames}\n`;
                     }
                 }
-                p += `  ⚠ 每个角色只能使用其已注册的格位。属性值为整数。\n`;
-                p += `  ⚠ 普通衣物非赋魔或特殊材料不应有高属性值。\n`;
+                p += isZh
+                    ? `  ⚠ 每个角色只能使用其已注册的格位。属性值为整数。\n  ⚠ 普通衣物非赋魔或特殊材料不应有高属性值。\n`
+                    : `  ⚠ Each character may only use their registered slots. Stat values must be integers.\n  ⚠ Normal clothing without enchantment or special materials should NOT have high stat values.\n`;
             }
         }
         if (sendRep) {
             const repConfig = this._getRpgReputationConfig();
             if (repConfig.categories.length > 0) {
-                const catNames = repConfig.categories.map(c => c.name).join('、');
-                p += `\n【声望】仅声望变化时写，无变化可省略\n`;
+                const sep = isZh ? '、' : ', ';
+                const catNames = repConfig.categories.map(c => c.name).join(sep);
+                p += isZh ? `\n【声望】仅声望变化时写，无变化可省略\n` : `\n[Reputation] Write only when reputation changes; skip if unchanged\n`;
                 if (uoRep) {
-                    p += `  rep:声望分类名=当前值\n`;
+                    p += isZh ? `  rep:声望分类名=当前值\n` : `  rep:category name=current value\n`;
                 } else {
-                    p += `  rep:归属|声望分类名=当前值\n`;
+                    p += isZh ? `  rep:归属|声望分类名=当前值\n` : `  rep:${own}|category name=current value\n`;
                 }
-                p += `  已注册的声望分类: ${catNames}\n`;
-                p += `  ⚠ 禁止创造新的声望分类。只允许使用上述已注册的分类名。\n`;
+                p += isZh ? `  已注册的声望分类: ${catNames}\n` : `  Registered reputation categories: ${catNames}\n`;
+                p += isZh
+                    ? `  ⚠ 禁止创造新的声望分类。只允许使用上述已注册的分类名。\n`
+                    : `  ⚠ Do NOT create new reputation categories. Only use the registered names above.\n`;
             }
         }
         if (sendLvl) {
-            p += `\n【等级与经验值】仅升级/降级或经验变化时写，无变化可省略\n`;
+            p += isZh ? `\n【等级与经验值】仅升级/降级或经验变化时写，无变化可省略\n` : `\n[Level & XP] Write only on level-up/down or XP change; skip if unchanged\n`;
             if (uoLvl) {
-                p += `  level:等级数值\n`;
-                p += `  xp:当前经验/升级所需\n`;
+                p += isZh ? `  level:等级数值\n  xp:当前经验/升级所需\n` : `  level:level number\n  xp:current XP/needed for level-up\n`;
             } else {
-                p += `  level:归属=等级数值\n`;
-                p += `  xp:归属=当前经验/升级所需\n`;
+                p += isZh ? `  level:归属=等级数值\n  xp:归属=当前经验/升级所需\n` : `  level:${own}=level number\n  xp:${own}=current XP/needed for level-up\n`;
             }
-            p += `  经验值获取参考：\n`;
-            p += `  - 与角色等级相近或更强的挑战：获得较多经验(10~50+)\n`;
-            p += `  - 等级差 ≥10 的低级挑战：仅得 1 点经验\n`;
-            p += `  - 日常活动/对话/探索：少量经验(1~5)\n`;
-            p += `  - 升级所需经验随等级递增：建议 升级所需 = 等级 × 100\n`;
+            p += isZh ? `  经验值获取参考：\n` : `  XP gain reference:\n`;
+            p += isZh
+                ? `  - 与角色等级相近或更强的挑战：获得较多经验(10~50+)\n  - 等级差 ≥10 的低级挑战：仅得 1 点经验\n  - 日常活动/对话/探索：少量经验(1~5)\n  - 升级所需经验随等级递增：建议 升级所需 = 等级 × 100\n`
+                : `  - Challenge near or above character level: more XP (10~50+)\n  - Level gap ≥10 trivial challenge: only 1 XP\n  - Daily activities/dialogue/exploration: small XP (1~5)\n  - XP needed increases with level: suggested formula = level × 100\n`;
         }
         if (sendCur) {
             const curConfig = this._getRpgCurrencyConfig();
             if (curConfig.denominations.length > 0) {
-                const denomNames = curConfig.denominations.map(d => d.name).join('、');
-                p += `\n【货币——发生交易/拾取/消费时必写！】\n`;
+                const sep = isZh ? '、' : ', ';
+                const denomNames = curConfig.denominations.map(d => d.name).join(sep);
+                p += isZh ? `\n【货币——发生交易/拾取/消费时必写！】\n` : `\n[Currency — MUST write on any trade/pickup/spending!]\n`;
                 if (uoCur) {
-                    p += `格式: currency:币名=±变化量\n`;
-                    p += `示例:\n`;
-                    p += `  currency:${curConfig.denominations[0].name}=+10\n`;
-                    p += `  currency:${curConfig.denominations[0].name}=-3\n`;
-                    if (curConfig.denominations.length > 1) {
-                        p += `  currency:${curConfig.denominations[1].name}=+50\n`;
-                    }
-                    p += `也可写绝对值: currency:币名=数量\n`;
+                    p += isZh ? `格式: currency:币名=±变化量\n` : `Format: currency:denomination=±amount\n`;
+                    p += isZh ? `示例:\n` : `Examples:\n`;
+                    p += `  currency:${curConfig.denominations[0].name}=+10\n  currency:${curConfig.denominations[0].name}=-3\n`;
+                    if (curConfig.denominations.length > 1) p += `  currency:${curConfig.denominations[1].name}=+50\n`;
+                    p += isZh ? `也可写绝对值: currency:币名=数量\n` : `Absolute value also OK: currency:denomination=amount\n`;
                 } else {
-                    p += `格式: currency:归属|币名=±变化量\n`;
-                    p += `示例:\n`;
-                    p += `  currency:${userName}|${curConfig.denominations[0].name}=+10\n`;
-                    p += `  currency:${userName}|${curConfig.denominations[0].name}=-3\n`;
-                    if (curConfig.denominations.length > 1) {
-                        p += `  currency:${userName}|${curConfig.denominations[1].name}=+50\n`;
-                    }
-                    p += `也可写绝对值: currency:归属|币名=数量\n`;
+                    p += isZh ? `格式: currency:归属|币名=±变化量\n` : `Format: currency:${own}|denomination=±amount\n`;
+                    p += isZh ? `示例:\n` : `Examples:\n`;
+                    p += `  currency:${userName}|${curConfig.denominations[0].name}=+10\n  currency:${userName}|${curConfig.denominations[0].name}=-3\n`;
+                    if (curConfig.denominations.length > 1) p += `  currency:${userName}|${curConfig.denominations[1].name}=+50\n`;
+                    p += isZh ? `也可写绝对值: currency:归属|币名=数量\n` : `Absolute value also OK: currency:${own}|denomination=amount\n`;
                 }
-                p += `已注册币种: ${denomNames}\n`;
-                p += `⚠ 禁止使用未注册的币种名。任何涉及金钱的行为（买卖/拾取/奖赏/偷窃）都必须写 currency 行。\n`;
+                p += isZh ? `已注册币种: ${denomNames}\n` : `Registered denominations: ${denomNames}\n`;
+                p += isZh
+                    ? `⚠ 禁止使用未注册的币种名。任何涉及金钱的行为（买卖/拾取/奖赏/偷窃）都必须写 currency 行。\n`
+                    : `⚠ Do NOT use unregistered denomination names. Any money-related action (buy/sell/pickup/reward/theft) MUST include a currency line.\n`;
             }
         }
         if (!!this.settings?.sendRpgStronghold) {
             const rpg = this.getChat()?.[0]?.horae_meta?.rpg;
             const nodes = rpg?.strongholds || [];
-            p += `\n【据点/基地】据点状态变化时写（升级/建造/损毁/描述变更），无变化可省略\n`;
-            p += `格式: base:据点路径=等级 或 base:据点路径|desc=描述\n`;
-            p += `路径用 > 分隔层级\n`;
-            p += `示例:\n`;
-            p += `  base:主角庄园=3\n`;
-            p += `  base:主角庄园>锻造区>锻造炉=2\n`;
-            p += `  base:主角庄园|desc=坐落于河谷的石砌庄园，配有围墙和瞭望塔\n`;
+            p += isZh
+                ? `\n【据点/基地】据点状态变化时写（升级/建造/损毁/描述变更），无变化可省略\n`
+                : `\n[Strongholds] Write when stronghold status changes (upgrade/build/destroy/description update); skip if unchanged\n`;
+            p += isZh
+                ? `格式: base:据点路径=等级 或 base:据点路径|desc=描述\n路径用 > 分隔层级\n`
+                : `Format: base:stronghold path=level or base:stronghold path|desc=description\nUse > to separate hierarchy levels\n`;
+            p += isZh ? `示例:\n` : `Examples:\n`;
+            if (isZh) {
+                p += `  base:主角庄园=3\n  base:主角庄园>锻造区>锻造炉=2\n  base:主角庄园|desc=坐落于河谷的石砌庄园，配有围墙和瞭望塔\n`;
+            } else {
+                p += `  base:Hero's Manor=3\n  base:Hero's Manor>Forge Area>Furnace=2\n  base:Hero's Manor|desc=Stone manor in a river valley with walls and watchtower\n`;
+            }
             if (nodes.length > 0) {
                 const rootNodes = nodes.filter(n => !n.parent);
+                const sep = isZh ? '；' : '; ';
                 const summary = rootNodes.map(r => {
                     const kids = nodes.filter(n => n.parent === r.id);
-                    const kidStr = kids.length > 0 ? `(${kids.map(k => k.name).join('、')})` : '';
+                    const kidSep = isZh ? '、' : ', ';
+                    const kidStr = kids.length > 0 ? `(${kids.map(k => k.name).join(kidSep)})` : '';
                     return `${r.name}${r.level != null ? ' Lv.' + r.level : ''}${kidStr}`;
-                }).join('；');
-                p += `当前据点: ${summary}\n`;
+                }).join(sep);
+                p += isZh ? `当前据点: ${summary}\n` : `Current strongholds: ${summary}\n`;
             }
         }
         return p;
@@ -3723,8 +3891,11 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
              !!this.settings.sendRpgEquipment || !!this.settings.sendRpgLevel || !!this.settings.sendRpgCurrency ||
              !!this.settings.sendRpgStronghold);
         if (rpgActive) tags.push('<horaerpg>...</horaerpg>');
-        const count = tags.length === 2 ? '两个' : `${tags.length}个`;
-        return `你的回复末尾必须包含 ${tags.join(' 和 ')} ${count}标签。\n缺少任何一个标签=不合格。`;
+        if (this._isAiOutputChinese()) {
+            const count = tags.length === 2 ? '两个' : `${tags.length}个`;
+            return `你的回复末尾必须包含 ${tags.join(' 和 ')} ${count}标签。\n缺少任何一个标签=不合格。`;
+        }
+        return `Your reply MUST end with ${tags.join(' and ')} (${tags.length} tags total).\nMissing any tag = unacceptable.`;
     }
 
     /** 宽松正则解析（不需要标签包裹） */
@@ -3869,7 +4040,7 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
                 const summary = parts.slice(1).join('|').trim();
                 
                 let level = '一般';
-                if (levelRaw === '关键' || levelRaw.toLowerCase() === 'critical') {
+                if (levelRaw === '关键' || levelRaw === '關鍵' || levelRaw.toLowerCase() === 'critical') {
                     level = '关键';
                 } else if (levelRaw === '重要' || levelRaw.toLowerCase() === 'important') {
                     level = '重要';

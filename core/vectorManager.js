@@ -6,6 +6,7 @@
  */
 
 import { calculateDetailedRelativeTime } from '../utils/timeUtils.js';
+import { t2s } from '../utils/zhConvert.js';
 
 const DB_NAME = 'HoraeVectors';
 const DB_VERSION = 1;
@@ -710,19 +711,19 @@ export class VectorManager {
             if (userQuery.includes(c)) mentionedChars.push(c);
         }
 
-        const isFirst = /第一次|初次|首次|初见|初遇|最早|一开始/.test(userQuery);
-        const isLast = /上次|上一次|最后一次|最近一次|之前/.test(userQuery);
+        const isFirst = /第一次|初次|首次|初见|初見|初遇|最早|一开始|一開始/.test(userQuery);
+        const isLast = /上次|上一次|最后一次|最後一次|最近一次|之前/.test(userQuery);
 
-        const hasCostumeKw = /穿|戴|换|衣|裙|裤|袍|衫|装|鞋/.test(userQuery);
-        const hasMoodKw = /生气|愤怒|开心|高兴|难过|伤心|哭|害怕|恐惧|害羞|羞耻|得意|满足|嫉妒|悲伤|焦虑|紧张|兴奋|感动|温柔|冷漠/.test(userQuery);
-        const hasGiftKw = /礼物|赠送|送给|送的|信物|定情|收到|收下|转赠|聘礼|嫁妆|纪念品|贺卡/.test(userQuery);
-        const hasImportantItemKw = /重要.{0,2}(物品|东西|道具|宝物)|关键.{0,2}(物品|东西|道具|宝物)|珍贵|宝贝|宝物|神器|秘宝|圣物/.test(userQuery);
-        const hasImportantEventKw = /重要.{0,2}(事|事件|经历)|关键.{0,2}(事|事件|转折)|大事|转折|里程碑/.test(userQuery);
-        const hasCeremonyKw = /婚礼|葬礼|仪式|典礼|庆典|节日|祭祀|加冕|册封|宣誓|洗礼|成人礼|庆祝|宴会|舞会|祭典/.test(userQuery);
-        const hasPromiseKw = /承诺|誓言|约定|保证|发誓|立誓|契约|盟约|许诺/.test(userQuery);
-        const hasLossKw = /死亡|去世|牺牲|离别|分离|告别|失去|消失|陨落|永别|诀别|阵亡/.test(userQuery);
-        const hasRevelationKw = /秘密|真相|揭露|坦白|暴露|真实身份|隐瞒|谎言|欺骗|伪装|冒充|真名|血统|身世|揭穿/.test(userQuery);
-        const hasPowerKw = /觉醒|升级|进化|突破|衰退|失去能力|解封|封印|变身|异变|获得力量|血脉|继承|传承|领悟/.test(userQuery);
+        const hasCostumeKw = /穿|戴|换|換|衣|裙|裤|褲|袍|衫|装|裝|鞋/.test(userQuery);
+        const hasMoodKw = /生气|生氣|愤怒|憤怒|开心|開心|高兴|高興|难过|難過|伤心|傷心|哭|害怕|恐惧|恐懼|害羞|羞耻|羞恥|得意|满足|滿足|嫉妒|悲伤|悲傷|焦虑|焦慮|紧张|緊張|兴奋|興奮|感动|感動|温柔|溫柔|冷漠/.test(userQuery);
+        const hasGiftKw = /礼物|禮物|赠送|贈送|送给|送給|送的|信物|定情|收到|收下|转赠|轉贈|聘礼|聘禮|嫁妆|嫁妝|纪念品|紀念品|贺卡|賀卡/.test(userQuery);
+        const hasImportantItemKw = /重要.{0,2}(物品|东西|東西|道具|宝物|寶物)|关键.{0,2}(物品|东西|東西|道具|宝物|寶物)|關鍵.{0,2}(物品|東西|道具|寶物)|珍贵|珍貴|宝贝|寶貝|宝物|寶物|神器|秘宝|秘寶|圣物|聖物/.test(userQuery);
+        const hasImportantEventKw = /重要.{0,2}(事|事件|经历|經歷)|关键.{0,2}(事|事件|转折|轉折)|關鍵.{0,2}(事|事件|轉折)|大事|转折|轉折|里程碑/.test(userQuery);
+        const hasCeremonyKw = /婚礼|婚禮|葬礼|葬禮|仪式|儀式|典礼|典禮|庆典|慶典|节日|節日|祭祀|加冕|册封|冊封|宣誓|洗礼|洗禮|成人礼|成人禮|庆祝|慶祝|宴会|宴會|舞会|舞會|祭典/.test(userQuery);
+        const hasPromiseKw = /承诺|承諾|誓言|约定|約定|保证|保證|发誓|發誓|立誓|契约|契約|盟约|盟約|许诺|許諾/.test(userQuery);
+        const hasLossKw = /死亡|去世|牺牲|犧牲|离别|離別|分离|分離|告别|告別|失去|消失|陨落|隕落|永别|永別|诀别|訣別|阵亡|陣亡/.test(userQuery);
+        const hasRevelationKw = /秘密|真相|揭露|坦白|暴露|真实身份|真實身份|隐瞒|隱瞞|谎言|謊言|欺骗|欺騙|伪装|偽裝|冒充|真名|血统|血統|身世|揭穿/.test(userQuery);
+        const hasPowerKw = /觉醒|覺醒|升级|升級|进化|進化|突破|衰退|失去能力|解封|封印|变身|變身|异变|異變|获得力量|獲得力量|血脉|血脈|继承|繼承|传承|傳承|领悟|領悟/.test(userQuery);
 
         const results = [];
 
@@ -947,10 +948,11 @@ export class VectorManager {
      * 直接从用户文本中扫描 TERM_CATEGORIES 中的已知词汇（无需分词）
      */
     _detectCategoryTerms(text) {
+        const normalized = t2s(text);
         const found = [];
         for (const terms of Object.values(TERM_CATEGORIES)) {
             for (const term of terms) {
-                if (text.includes(term)) {
+                if (normalized.includes(term)) {
                     found.push(term);
                 }
             }
@@ -1133,10 +1135,10 @@ export class VectorManager {
 
             for (const evt of meta.events) {
                 if (evt.isSummary || evt.level === '摘要' || evt._summaryId) continue;
-                if (evt.level === '重要' || evt.level === '关键') {
+                if (evt.level === '重要' || evt.level === '关键' || evt.level === '關鍵') {
                     results.push({
                         messageIndex: i,
-                        similarity: evt.level === '关键' ? 1.0 : 0.95,
+                        similarity: (evt.level === '关键' || evt.level === '關鍵') ? 1.0 : 0.95,
                         document: `[结构化] ${evt.level}事件: ${(evt.summary || '').substring(0, 30)}`,
                         source: 'structured',
                     });
@@ -1175,7 +1177,7 @@ export class VectorManager {
 
             for (const evt of meta.events) {
                 if (evt.isSummary || evt.level === '摘要' || evt._summaryId) continue;
-                const text = evt.summary || '';
+                const text = t2s(evt.summary || '');
                 const hits = [...searchTerms].filter(t => text.includes(t));
                 if (hits.length > 0) {
                     results.push({
@@ -1271,7 +1273,7 @@ export class VectorManager {
             if (meta?.events?.length > 0) {
                 for (const evt of meta.events) {
                     if (evt.isSummary || evt.level === '摘要') continue;
-                    const mark = evt.level === '关键' ? '★' : evt.level === '重要' ? '●' : '○';
+                    const mark = (evt.level === '关键' || evt.level === '關鍵') ? '★' : evt.level === '重要' ? '●' : '○';
                     if (evt.summary) parts.push(`${mark}${evt.summary}`);
                 }
             }

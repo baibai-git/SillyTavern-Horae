@@ -1,47 +1,47 @@
 <!-- Horae 主抽屉面板 -->
 <div id="horae_drawer" class="drawer">
     <div class="drawer-toggle">
-        <div id="horae_drawer_icon" class="drawer-icon fa-regular fa-clock fa-fw closedIcon interactable" title="Horae - 时光记忆" tabindex="0"></div>
+        <div id="horae_drawer_icon" class="drawer-icon fa-regular fa-clock fa-fw closedIcon interactable" data-i18n-title="tooltip.openPanel" title="Horae - Memory Engine" tabindex="0"></div>
     </div>
     <div id="horae_drawer_content" class="drawer-content closedDrawer">
         <!-- 头部 -->
         <div class="drawer-header">
-            <div class="horae-title">
+            <div class="horae-title" data-i18n="plugin.name">
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">v1.10.2</span>
+            <span class="horae-version">v1.11.0</span>
         </div>
         
         <!-- 标签页导航 -->
         <div class="horae-tabs">
             <button class="horae-tab active" data-tab="status">
                 <i class="fa-solid fa-gauge"></i>
-                <span>状态</span>
+                <span data-i18n="tabs.status">状态</span>
             </button>
             <button class="horae-tab" data-tab="timeline">
                 <i class="fa-solid fa-timeline"></i>
-                <span>时间线</span>
+                <span data-i18n="tabs.timeline">时间线</span>
             </button>
             <button class="horae-tab" data-tab="characters">
                 <i class="fa-solid fa-users"></i>
-                <span>角色</span>
+                <span data-i18n="tabs.characters">角色</span>
             </button>
             <button class="horae-tab" data-tab="items">
                 <i class="fa-solid fa-box-open"></i>
-                <span>物品</span>
+                <span data-i18n="tabs.items">物品</span>
             </button>
             <button class="horae-tab" data-tab="locations">
                 <i class="fa-solid fa-map-location-dot"></i>
-                <span>场景</span>
+                <span data-i18n="tabs.locations">场景</span>
             </button>
             <button class="horae-tab" data-tab="rpg" id="horae-tab-btn-rpg" style="display:none;">
                 <i class="fa-solid fa-shield-halved"></i>
-                <span>RPG</span>
+                <span data-i18n="tabs.rpg">RPG</span>
             </button>
             <button class="horae-tab" data-tab="settings">
                 <i class="fa-solid fa-gear"></i>
-                <span>设置</span>
+                <span data-i18n="tabs.settings">设置</span>
             </button>
         </div>
         
@@ -50,7 +50,7 @@
             <!-- 状态页 -->
             <div id="horae-tab-status" class="horae-tab-content active">
                 <div class="horae-state-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="status.currentTime">
                         <i class="fa-regular fa-clock"></i>
                         当前时间
                     </div>
@@ -61,40 +61,40 @@
                 </div>
                 
                 <div class="horae-state-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="status.currentLocation">
                         <i class="fa-solid fa-location-dot"></i>
                         当前地点
                     </div>
                     <div class="horae-location-display">
-                        <span id="horae-current-location">未设置</span>
+                        <span id="horae-current-location" data-i18n="status.noLocation">未设置</span>
                         <span id="horae-current-atmosphere" class="horae-atmosphere-badge"></span>
                     </div>
                 </div>
                 
                 <div class="horae-state-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="status.costumes">
                         <i class="fa-solid fa-shirt"></i>
                         角色服装
                     </div>
                     <div id="horae-costumes-list" class="horae-costume-list">
-                        <div class="horae-empty-hint">暂无服装记录</div>
+                        <div class="horae-empty-hint" data-i18n="status.noCostumes">暂无服装记录</div>
                     </div>
                 </div>
                 
                 <div class="horae-state-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="status.itemTracking">
                         <i class="fa-solid fa-cube"></i>
                         物品追踪
                     </div>
                     <div id="horae-items-quick" class="horae-items-quick">
-                        <div class="horae-empty-hint">暂无物品追踪</div>
+                        <div class="horae-empty-hint" data-i18n="status.noItems">暂无物品追踪</div>
                     </div>
                 </div>
                 
                 <div class="horae-action-buttons">
                     <button id="horae-btn-refresh" class="horae-data-btn primary">
                         <i class="fa-solid fa-rotate"></i>
-                        <span>刷新</span>
+                        <span data-i18n="common.refresh">刷新</span>
                     </button>
                 </div>
             </div>
@@ -104,8 +104,8 @@
                 <!-- 待办事项区域 -->
                 <div class="horae-agenda-section">
                     <div class="horae-agenda-header">
-                        <span><i class="fa-solid fa-list-check"></i> 待办事项</span>
-                        <button id="horae-btn-add-agenda" class="horae-icon-btn small" title="添加待办">
+                        <span data-i18n="timeline.agenda"><i class="fa-solid fa-list-check"></i> 待办事项</span>
+                        <button id="horae-btn-add-agenda" class="horae-icon-btn small" data-i18n-title="tooltip.addAgenda" title="">
                             <i class="fa-solid fa-plus"></i>
                         </button>
                     </div>
@@ -115,47 +115,47 @@
                             <span id="horae-agenda-selected-count">0</span> 项已选
                         </div>
                         <div class="horae-multiselect-actions">
-                            <button id="horae-btn-agenda-select-all" class="horae-icon-btn small" title="全选">
+                            <button id="horae-btn-agenda-select-all" class="horae-icon-btn small" data-i18n-title="tooltip.selectAll" title="">
                                 <i class="fa-solid fa-check-double"></i>
                             </button>
-                            <button id="horae-btn-agenda-delete" class="horae-icon-btn small danger" title="删除选中">
+                            <button id="horae-btn-agenda-delete" class="horae-icon-btn small danger" data-i18n-title="tooltip.deleteSelected" title="">
                                 <i class="fa-solid fa-trash-can"></i>
                             </button>
-                            <button id="horae-btn-agenda-cancel-select" class="horae-icon-btn small" title="取消多选">
+                            <button id="horae-btn-agenda-cancel-select" class="horae-icon-btn small" data-i18n-title="tooltip.cancelMultiSelect" title="">
                                 <i class="fa-solid fa-xmark"></i>
                             </button>
                         </div>
                     </div>
                     <div id="horae-agenda-list" class="horae-agenda-list">
-                        <div class="horae-empty-hint">暂无待办事项</div>
+                        <div class="horae-empty-hint" data-i18n="timeline.noAgenda">暂无待办事项</div>
                     </div>
                 </div>
                 
                 <!-- 事件时间线区域 -->
                 <div class="horae-timeline-header">
-                    <span>事件时间线</span>
+                    <span data-i18n="timeline.events">事件时间线</span>
                     <div class="horae-timeline-controls">
-                        <select id="horae-timeline-filter" class="horae-select" title="筛选事件级别">
-                            <option value="all">全部</option>
-                            <option value="关键">关键</option>
-                            <option value="重要">重要</option>
-                            <option value="一般">一般</option>
-                            <option value="摘要">摘要</option>
+                        <select id="horae-timeline-filter" class="horae-select" data-i18n-title="tooltip.filterLevel" title="">
+                            <option value="all" data-i18n="timeline.filterAll">全部</option>
+                            <option value="关键" data-i18n="timeline.filterCritical">关键</option>
+                            <option value="重要" data-i18n="timeline.filterImportant">重要</option>
+                            <option value="一般" data-i18n="timeline.filterNormal">一般</option>
+                            <option value="摘要" data-i18n="timeline.filterSummary">摘要</option>
                         </select>
-                        <button id="horae-btn-timeline-multiselect" class="horae-icon-btn" title="多选模式">
+                        <button id="horae-btn-timeline-multiselect" class="horae-icon-btn" data-i18n-title="tooltip.multiSelectMode" title="">
                             <i class="fa-solid fa-check-double"></i>
                         </button>
-                        <button id="horae-btn-fix-summaries" class="horae-icon-btn" title="修复摘要状态（隐藏/压缩标记）">
+                        <button id="horae-btn-fix-summaries" class="horae-icon-btn" data-i18n-title="tooltip.fixSummaries" title="">
                             <i class="fa-solid fa-screwdriver-wrench"></i>
                         </button>
-                        <button id="horae-btn-scan-all" class="horae-icon-btn" title="刷新时间线">
+                        <button id="horae-btn-scan-all" class="horae-icon-btn" data-i18n-title="tooltip.refreshTimeline" title="">
                             <i class="fa-solid fa-rotate"></i>
                         </button>
                     </div>
                 </div>
                 <div class="horae-timeline-search-row">
                     <i class="fa-solid fa-magnifying-glass horae-search-icon"></i>
-                    <input type="text" id="horae-timeline-search" class="horae-search-input" placeholder="搜索事件关键字...">
+                    <input type="text" id="horae-timeline-search" class="horae-search-input" data-i18n="[placeholder]timeline.searchPlaceholder" placeholder="搜索事件关键字...">
                 </div>
                 <!-- 时间线多选模式工具栏 -->
                 <div id="horae-timeline-multiselect-bar" class="horae-multiselect-bar" style="display: none;">
@@ -163,16 +163,16 @@
                         <span id="horae-timeline-selected-count">0</span> 项已选
                     </div>
                     <div class="horae-multiselect-actions">
-                        <button id="horae-btn-timeline-select-all" class="horae-icon-btn small" title="全选">
+                        <button id="horae-btn-timeline-select-all" class="horae-icon-btn small" data-i18n-title="tooltip.selectAll" title="">
                             <i class="fa-solid fa-check-double"></i>
                         </button>
-                        <button id="horae-btn-timeline-compress" class="horae-icon-btn small" title="AI智能压缩：将选中事件合并为一条摘要">
+                        <button id="horae-btn-timeline-compress" class="horae-icon-btn small" data-i18n-title="tooltip.aiCompress" title="">
                             <i class="fa-solid fa-compress"></i>
                         </button>
-                        <button id="horae-btn-timeline-delete" class="horae-icon-btn small danger" title="删除选中">
+                        <button id="horae-btn-timeline-delete" class="horae-icon-btn small danger" data-i18n-title="tooltip.deleteSelected" title="">
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
-                        <button id="horae-btn-timeline-cancel-select" class="horae-icon-btn small" title="取消多选">
+                        <button id="horae-btn-timeline-cancel-select" class="horae-icon-btn small" data-i18n-title="tooltip.cancelMultiSelect" title="">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
@@ -180,7 +180,7 @@
                 <div id="horae-timeline-list" class="horae-timeline-list">
                     <div class="horae-empty-state">
                         <i class="fa-regular fa-clock"></i>
-                        <span>暂无记录的事件</span>
+                        <span data-i18n="timeline.noEvents">暂无记录的事件</span>
                     </div>
                 </div>
             </div>
@@ -188,28 +188,28 @@
             <!-- 角色页 -->
             <div id="horae-tab-characters" class="horae-tab-content">
                 <div class="horae-subsection">
-                    <div class="horae-subsection-title">在场角色</div>
+                    <div class="horae-subsection-title" data-i18n="characters.present">在场角色</div>
                     <div id="horae-present-characters" class="horae-character-list">
-                        <div class="horae-empty-hint">暂无记录</div>
+                        <div class="horae-empty-hint" data-i18n="characters.noRecords">暂无记录</div>
                     </div>
                 </div>
                 
                 <div class="horae-subsection">
-                    <div class="horae-subsection-title">
+                    <div class="horae-subsection-title" data-i18n="characters.affection">
                         好感度
-                        <button id="horae-affection-toggle" class="horae-eye-toggle" title="显示/隐藏好感度">
+                        <button id="horae-affection-toggle" class="horae-eye-toggle" data-i18n-title="tooltip.showHideAffection" title="">
                             <i class="fa-solid fa-eye"></i>
                         </button>
                     </div>
                     <div id="horae-affection-list" class="horae-affection-list">
-                        <div class="horae-empty-hint">暂无好感度记录</div>
+                        <div class="horae-empty-hint" data-i18n="characters.noAffection">暂无好感度记录</div>
                     </div>
                 </div>
                 
                 <div class="horae-subsection">
-                    <div class="horae-subsection-title">
+                    <div class="horae-subsection-title" data-i18n="characters.npcList">
                         角色
-                        <button id="horae-btn-npc-multiselect" class="horae-icon-btn small" title="多选模式">
+                        <button id="horae-btn-npc-multiselect" class="horae-icon-btn small" data-i18n-title="tooltip.multiSelectMode" title="">
                             <i class="fa-solid fa-check-double"></i>
                         </button>
                     </div>
@@ -218,31 +218,31 @@
                             <span id="horae-npc-selected-count">0</span> 项已选
                         </div>
                         <div class="horae-multiselect-actions">
-                            <button id="horae-btn-npc-select-all" class="horae-icon-btn small" title="全选">
+                            <button id="horae-btn-npc-select-all" class="horae-icon-btn small" data-i18n-title="tooltip.selectAll" title="">
                                 <i class="fa-solid fa-check-double"></i>
                             </button>
-                            <button id="horae-btn-npc-delete" class="horae-icon-btn small danger" title="删除选中">
+                            <button id="horae-btn-npc-delete" class="horae-icon-btn small danger" data-i18n-title="tooltip.deleteSelected" title="">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
-                            <button id="horae-btn-npc-cancel-select" class="horae-icon-btn small" title="取消">
+                            <button id="horae-btn-npc-cancel-select" class="horae-icon-btn small" data-i18n-title="tooltip.cancel" title="">
                                 <i class="fa-solid fa-xmark"></i>
                             </button>
                         </div>
                     </div>
                     <div id="horae-npc-list" class="horae-npc-list">
-                        <div class="horae-empty-hint">暂无角色记录</div>
+                        <div class="horae-empty-hint" data-i18n="characters.noNpc">暂无角色记录</div>
                     </div>
                 </div>
                 
                 <div id="horae-relationship-section" class="horae-subsection" style="display: none;">
-                    <div class="horae-subsection-title">
+                    <div class="horae-subsection-title" data-i18n="characters.relationships">
                         关系网络
-                        <button id="horae-btn-add-relationship" class="horae-btn-sm" title="手动添加关系">
+                        <button id="horae-btn-add-relationship" class="horae-btn-sm" data-i18n-title="tooltip.addRelationship" title="">
                             <i class="fa-solid fa-plus"></i>
                         </button>
                     </div>
                     <div id="horae-relationship-list" class="horae-relationship-list">
-                        <div class="horae-empty-hint">暂无关系记录，AI会在角色互动时自动记录</div>
+                        <div class="horae-empty-hint" data-i18n="characters.noRelationships">暂无关系记录，AI会在角色互动时自动记录</div>
                     </div>
                 </div>
             </div>
@@ -251,25 +251,25 @@
             <div id="horae-tab-items" class="horae-tab-content">
                 <div class="horae-items-toolbar">
                     <div class="horae-items-header">
-                        <span>物品追踪列表</span>
+                        <span data-i18n="items.title">物品追踪列表</span>
                         <div class="horae-items-controls">
-                            <select id="horae-items-holder-filter" class="horae-select" title="筛选持有人">
-                                <option value="all">所有人</option>
+                            <select id="horae-items-holder-filter" class="horae-select" data-i18n-title="tooltip.filterHolder" title="">
+                                <option value="all" data-i18n="items.filterHolder">所有人</option>
                             </select>
-                            <select id="horae-items-filter" class="horae-select" title="筛选物品级别">
-                                <option value="all">全部</option>
-                                <option value="关键">关键</option>
-                                <option value="重要">重要</option>
-                                <option value="一般">一般</option>
+                            <select id="horae-items-filter" class="horae-select" data-i18n-title="tooltip.filterImportance" title="">
+                                <option value="all" data-i18n="items.filterAll">全部</option>
+                                <option value="关键" data-i18n="levels.critical">关键</option>
+                                <option value="重要" data-i18n="levels.important">重要</option>
+                                <option value="一般" data-i18n="levels.normal">一般</option>
                             </select>
-                            <button id="horae-btn-items-refresh" class="horae-icon-btn" title="刷新物品列表">
+                            <button id="horae-btn-items-refresh" class="horae-icon-btn" data-i18n-title="tooltip.refreshItems" title="">
                                 <i class="fa-solid fa-rotate"></i>
                             </button>
                         </div>
                     </div>
                     <div class="horae-items-search-row">
                         <i class="fa-solid fa-magnifying-glass horae-search-icon"></i>
-                        <input type="text" id="horae-items-search" class="horae-search-input" placeholder="搜索物品名、持有者、位置...">
+                        <input type="text" id="horae-items-search" class="horae-search-input" data-i18n="[placeholder]items.searchPlaceholder" placeholder="搜索物品名、持有者、位置...">
                     </div>
                 </div>
                 <!-- 多选模式工具栏 -->
@@ -278,24 +278,24 @@
                         <span id="horae-items-selected-count">0</span> 项已选
                     </div>
                     <div class="horae-multiselect-actions">
-                        <button id="horae-btn-items-select-all" class="horae-icon-btn small" title="全选">
+                        <button id="horae-btn-items-select-all" class="horae-icon-btn small" data-i18n-title="tooltip.selectAll" title="">
                             <i class="fa-solid fa-check-double"></i>
                         </button>
-                        <button id="horae-btn-items-delete" class="horae-icon-btn small danger" title="删除选中">
+                        <button id="horae-btn-items-delete" class="horae-icon-btn small danger" data-i18n-title="tooltip.deleteSelected" title="">
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
-                        <button id="horae-btn-items-cancel-select" class="horae-icon-btn small" title="取消多选">
+                        <button id="horae-btn-items-cancel-select" class="horae-icon-btn small" data-i18n-title="tooltip.cancelMultiSelect" title="">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
                 </div>
-                <div class="horae-items-hint">
+                <div class="horae-items-hint" data-i18n="items.longPressHint">
                     <i class="fa-solid fa-hand-pointer"></i> 长按物品进入多选模式
                 </div>
                 <div id="horae-items-full-list" class="horae-items-full-list">
                     <div class="horae-empty-state">
                         <i class="fa-solid fa-box-open"></i>
-                        <span>暂无追踪的物品</span>
+                        <span data-i18n="items.noItems">暂无追踪的物品</span>
                     </div>
                 </div>
             </div>
@@ -303,18 +303,18 @@
             <!-- 场景记忆页 -->
             <div id="horae-tab-locations" class="horae-tab-content">
                 <div class="horae-location-toolbar">
-                    <button id="horae-btn-add-location" class="horae-btn" title="手动添加地点">
+                    <button id="horae-btn-add-location" class="horae-btn" data-i18n="locations.addLocation" data-i18n-title="tooltip.addLocation" title="">
                         <i class="fa-solid fa-plus"></i> 添加地点
                     </button>
-                    <button id="horae-btn-merge-locations" class="horae-btn" title="选择两个地点合并为一个">
+                    <button id="horae-btn-merge-locations" class="horae-btn" data-i18n="locations.mergeLocations" data-i18n-title="tooltip.mergeLocations" title="">
                         <i class="fa-solid fa-code-merge"></i> 合并地点
                     </button>
                 </div>
                 <div id="horae-location-list">
                     <div class="horae-empty-state">
                         <i class="fa-solid fa-map-location-dot"></i>
-                        <span>暂无场景记忆</span>
-                        <span style="font-size:11px;opacity:0.6;margin-top:4px;">开启「设置 → 场景记忆」后，AI会在首次到达新地点时自动记录</span>
+                        <span data-i18n="locations.noLocations">暂无场景记忆</span>
+                        <span data-i18n="locations.noLocationsHint" style="font-size:11px;opacity:0.6;margin-top:4px;">开启「设置 → 场景记忆」后，AI会在首次到达新地点时自动记录</span>
                     </div>
                 </div>
             </div>
@@ -324,12 +324,12 @@
                 <!-- 属性条配置 -->
                 <div class="horae-rpg-config-section" id="horae-rpg-bar-config-area">
                     <div class="horae-rpg-section-head">
-                        <span>属性条配置</span>
-                        <button id="horae-rpg-bar-reset" class="horae-rpg-btn-sm" title="恢复默认"><i class="fa-solid fa-rotate-left"></i></button>
-                        <button id="horae-rpg-bar-clean" class="horae-rpg-btn-sm" title="清理聊天中不在当前配置内的旧属性条数据"><i class="fa-solid fa-broom"></i></button>
-                        <button id="horae-rpg-bar-export" class="horae-rpg-btn-sm" title="导出配置"><i class="fa-solid fa-download"></i></button>
-                        <button id="horae-rpg-bar-import" class="horae-rpg-btn-sm" title="导入配置"><i class="fa-solid fa-upload"></i></button>
-                        <button id="horae-rpg-add-bar" class="horae-rpg-btn-sm" title="添加属性条"><i class="fa-solid fa-plus"></i></button>
+                        <span data-i18n="rpg.barConfig">属性条配置</span>
+                        <button id="horae-rpg-bar-reset" class="horae-rpg-btn-sm" data-i18n-title="tooltip.restoreDefault" title=""><i class="fa-solid fa-rotate-left"></i></button>
+                        <button id="horae-rpg-bar-clean" class="horae-rpg-btn-sm" data-i18n-title="tooltip.cleanStale" title=""><i class="fa-solid fa-broom"></i></button>
+                        <button id="horae-rpg-bar-export" class="horae-rpg-btn-sm" data-i18n-title="tooltip.exportConfig" title=""><i class="fa-solid fa-download"></i></button>
+                        <button id="horae-rpg-bar-import" class="horae-rpg-btn-sm" data-i18n-title="tooltip.importConfig" title=""><i class="fa-solid fa-upload"></i></button>
+                        <button id="horae-rpg-add-bar" class="horae-rpg-btn-sm" data-i18n-title="tooltip.addBar" title=""><i class="fa-solid fa-plus"></i></button>
                     </div>
                     <div id="horae-rpg-bar-config-list"></div>
                     <input type="file" id="horae-rpg-bar-import-file" accept=".json" style="display:none;" />
@@ -337,12 +337,12 @@
                 <!-- 属性面板配置 -->
                 <div class="horae-rpg-config-section" id="horae-rpg-attr-config-area">
                     <div class="horae-rpg-section-head">
-                        <span>属性面板配置</span>
-                        <button id="horae-rpg-attr-reset" class="horae-rpg-btn-sm" title="恢复默认"><i class="fa-solid fa-rotate-left"></i></button>
-                        <button id="horae-rpg-attr-export" class="horae-rpg-btn-sm" title="导出配置"><i class="fa-solid fa-download"></i></button>
-                        <button id="horae-rpg-attr-import" class="horae-rpg-btn-sm" title="导入配置"><i class="fa-solid fa-upload"></i></button>
-                        <button id="horae-rpg-attr-view-toggle" class="horae-rpg-btn-sm" title="切换图形/文字"><i class="fa-solid fa-chart-pie"></i></button>
-                        <button id="horae-rpg-add-attr" class="horae-rpg-btn-sm" title="添加属性"><i class="fa-solid fa-plus"></i></button>
+                        <span data-i18n="rpg.attrConfig">属性面板配置</span>
+                        <button id="horae-rpg-attr-reset" class="horae-rpg-btn-sm" data-i18n-title="tooltip.restoreDefault" title=""><i class="fa-solid fa-rotate-left"></i></button>
+                        <button id="horae-rpg-attr-export" class="horae-rpg-btn-sm" data-i18n-title="tooltip.exportConfig" title=""><i class="fa-solid fa-download"></i></button>
+                        <button id="horae-rpg-attr-import" class="horae-rpg-btn-sm" data-i18n-title="tooltip.importConfig" title=""><i class="fa-solid fa-upload"></i></button>
+                        <button id="horae-rpg-attr-view-toggle" class="horae-rpg-btn-sm" data-i18n-title="tooltip.toggleGraphText" title=""><i class="fa-solid fa-chart-pie"></i></button>
+                        <button id="horae-rpg-add-attr" class="horae-rpg-btn-sm" data-i18n-title="tooltip.addAttribute" title=""><i class="fa-solid fa-plus"></i></button>
                     </div>
                     <div id="horae-rpg-attr-config-list"></div>
                     <input type="file" id="horae-rpg-attr-import-file" accept=".json" style="display:none;" />
@@ -354,16 +354,16 @@
                 <!-- 角色属性手动编辑 -->
                 <div class="horae-rpg-manual-section">
                     <div class="horae-rpg-section-head">
-                        <span>角色属性</span>
-                        <button id="horae-rpg-add-charattr" class="horae-rpg-btn-sm" title="添加/编辑角色属性"><i class="fa-solid fa-plus"></i></button>
+                        <span data-i18n="rpg.charAttributes">角色属性</span>
+                        <button id="horae-rpg-add-charattr" class="horae-rpg-btn-sm" data-i18n-title="tooltip.addEditCharAttr" title=""><i class="fa-solid fa-plus"></i></button>
                     </div>
                     <div id="horae-rpg-charattr-form" style="display:none;"></div>
                 </div>
                 <!-- 技能列表 -->
                 <div class="horae-rpg-skills-area">
                     <div class="horae-rpg-section-head">
-                        <span>技能列表</span>
-                        <button id="horae-rpg-add-skill" class="horae-rpg-btn-sm" title="添加技能"><i class="fa-solid fa-plus"></i></button>
+                        <span data-i18n="rpg.skills">技能列表</span>
+                        <button id="horae-rpg-add-skill" class="horae-rpg-btn-sm" data-i18n-title="tooltip.addSkill" title=""><i class="fa-solid fa-plus"></i></button>
                     </div>
                     <div id="horae-rpg-skill-form" style="display:none;"></div>
                     <div id="horae-rpg-skills-section"></div>
@@ -371,11 +371,11 @@
                 <!-- 装备栏 -->
                 <div class="horae-rpg-equipment-area" id="horae-rpg-equipment-area" style="display:none;">
                     <div class="horae-rpg-section-head">
-                        <span>装备</span>
-                        <button id="horae-rpg-eq-preset" class="horae-rpg-btn-sm" title="管理装备模板"><i class="fa-solid fa-shapes"></i></button>
-                        <button id="horae-rpg-eq-export" class="horae-rpg-btn-sm" title="导出装备配置"><i class="fa-solid fa-download"></i></button>
-                        <button id="horae-rpg-eq-import" class="horae-rpg-btn-sm" title="导入装备配置"><i class="fa-solid fa-upload"></i></button>
-                        <button id="horae-rpg-eq-lock" class="horae-rpg-btn-sm" title="锁定/解锁（锁定后AI不可建议新格位）"><i class="fa-solid fa-lock"></i></button>
+                        <span data-i18n="rpg.equipment">装备</span>
+                        <button id="horae-rpg-eq-preset" class="horae-rpg-btn-sm" data-i18n-title="tooltip.manageTemplates" title=""><i class="fa-solid fa-shapes"></i></button>
+                        <button id="horae-rpg-eq-export" class="horae-rpg-btn-sm" data-i18n-title="tooltip.exportEquipConfig" title=""><i class="fa-solid fa-download"></i></button>
+                        <button id="horae-rpg-eq-import" class="horae-rpg-btn-sm" data-i18n-title="tooltip.importEquipConfig" title=""><i class="fa-solid fa-upload"></i></button>
+                        <button id="horae-rpg-eq-lock" class="horae-rpg-btn-sm" data-i18n-title="tooltip.lockUnlock" title=""><i class="fa-solid fa-lock"></i></button>
                     </div>
                     <input type="file" id="horae-rpg-eq-import-file" accept=".json" style="display:none;" />
                     <div id="horae-rpg-eq-values-section"></div>
@@ -383,10 +383,10 @@
                 <!-- 声望系统 -->
                 <div class="horae-rpg-reputation-area" id="horae-rpg-reputation-area" style="display:none;">
                     <div class="horae-rpg-section-head">
-                        <span>声望配置</span>
-                        <button id="horae-rpg-rep-export" class="horae-rpg-btn-sm" title="导出声望配置"><i class="fa-solid fa-download"></i></button>
-                        <button id="horae-rpg-rep-import" class="horae-rpg-btn-sm" title="导入声望配置"><i class="fa-solid fa-upload"></i></button>
-                        <button id="horae-rpg-rep-add" class="horae-rpg-btn-sm" title="添加声望分类"><i class="fa-solid fa-plus"></i></button>
+                        <span data-i18n="rpg.reputationConfig">声望配置</span>
+                        <button id="horae-rpg-rep-export" class="horae-rpg-btn-sm" data-i18n-title="tooltip.exportRepConfig" title=""><i class="fa-solid fa-download"></i></button>
+                        <button id="horae-rpg-rep-import" class="horae-rpg-btn-sm" data-i18n-title="tooltip.importRepConfig" title=""><i class="fa-solid fa-upload"></i></button>
+                        <button id="horae-rpg-rep-add" class="horae-rpg-btn-sm" data-i18n-title="tooltip.addCategory" title=""><i class="fa-solid fa-plus"></i></button>
                     </div>
                     <input type="file" id="horae-rpg-rep-import-file" accept=".json" style="display:none;" />
                     <div id="horae-rpg-rep-config-list"></div>
@@ -395,17 +395,17 @@
                 <!-- 等级系统 -->
                 <div class="horae-rpg-level-area" id="horae-rpg-level-area" style="display:none;">
                     <div class="horae-rpg-section-head">
-                        <span>等级 / 经验值</span>
+                        <span data-i18n="rpg.levelXp">等级 / 经验值</span>
                     </div>
                     <div id="horae-rpg-level-values-section"></div>
                 </div>
                 <!-- 货币系统 -->
                 <div class="horae-rpg-currency-area" id="horae-rpg-currency-area" style="display:none;">
                     <div class="horae-rpg-section-head">
-                        <span>货币配置</span>
-                        <button id="horae-rpg-cur-export" class="horae-rpg-btn-sm" title="导出货币配置"><i class="fa-solid fa-download"></i></button>
-                        <button id="horae-rpg-cur-import" class="horae-rpg-btn-sm" title="导入货币配置"><i class="fa-solid fa-upload"></i></button>
-                        <button id="horae-rpg-cur-add" class="horae-rpg-btn-sm" title="添加币种"><i class="fa-solid fa-plus"></i></button>
+                        <span data-i18n="rpg.currencyConfig">货币配置</span>
+                        <button id="horae-rpg-cur-export" class="horae-rpg-btn-sm" data-i18n-title="tooltip.exportCurConfig" title=""><i class="fa-solid fa-download"></i></button>
+                        <button id="horae-rpg-cur-import" class="horae-rpg-btn-sm" data-i18n-title="tooltip.importCurConfig" title=""><i class="fa-solid fa-upload"></i></button>
+                        <button id="horae-rpg-cur-add" class="horae-rpg-btn-sm" data-i18n-title="tooltip.addDenom" title=""><i class="fa-solid fa-plus"></i></button>
                     </div>
                     <input type="file" id="horae-rpg-cur-import-file" accept=".json" style="display:none;" />
                     <div id="horae-rpg-cur-denom-list"></div>
@@ -414,10 +414,10 @@
                 <!-- 据点系统 -->
                 <div class="horae-rpg-stronghold-area" id="horae-rpg-stronghold-area" style="display:none;">
                     <div class="horae-rpg-section-head">
-                        <span>据点 / 基地</span>
-                        <button id="horae-rpg-sh-add" class="horae-rpg-btn-sm" title="添加据点"><i class="fa-solid fa-plus"></i></button>
-                        <button id="horae-rpg-sh-export" class="horae-rpg-btn-sm" title="导出据点"><i class="fa-solid fa-download"></i></button>
-                        <button id="horae-rpg-sh-import" class="horae-rpg-btn-sm" title="导入据点"><i class="fa-solid fa-upload"></i></button>
+                        <span data-i18n="rpg.stronghold">据点 / 基地</span>
+                        <button id="horae-rpg-sh-add" class="horae-rpg-btn-sm" data-i18n-title="tooltip.addStronghold" title=""><i class="fa-solid fa-plus"></i></button>
+                        <button id="horae-rpg-sh-export" class="horae-rpg-btn-sm" data-i18n-title="tooltip.exportStronghold" title=""><i class="fa-solid fa-download"></i></button>
+                        <button id="horae-rpg-sh-import" class="horae-rpg-btn-sm" data-i18n-title="tooltip.importStronghold" title=""><i class="fa-solid fa-upload"></i></button>
                     </div>
                     <input type="file" id="horae-rpg-sh-import-file" accept=".json" style="display:none;" />
                     <div id="horae-rpg-sh-tree"></div>
@@ -427,121 +427,158 @@
             <!-- 设置页 -->
             <div id="horae-tab-settings" class="horae-tab-content">
                 <div class="horae-settings-section" style="margin-bottom:12px;">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="settings.configProfile">
                         <i class="fa-solid fa-sliders"></i>
                         Horae 配置档
                     </div>
-                    <span class="horae-setting-hint" style="margin-bottom:8px;">
+                    <span class="horae-setting-hint" data-i18n="settings.configProfileHint" style="margin-bottom:8px;">
                         <i class="fa-solid fa-circle-info"></i>
                         导出当前所有开关、仅限主角设置、自定义提示词、RPG配置等为文件（不含自动摘要与向量记忆设置）。角色卡作者可将配置随卡分享，玩家导入后一键到位。
                     </span>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                        <button id="horae-settings-export" class="horae-rpg-btn-sm" title="导出全局配置"><i class="fa-solid fa-file-export"></i> 导出配置</button>
-                        <button id="horae-settings-import" class="horae-rpg-btn-sm" title="导入配置文件"><i class="fa-solid fa-file-import"></i> 导入配置</button>
-                        <button id="horae-settings-reset" class="horae-rpg-btn-sm" title="恢复所有设置为默认值" style="color:#ef4444;"><i class="fa-solid fa-rotate-left"></i> 恢复默认</button>
+                        <button id="horae-settings-export" class="horae-rpg-btn-sm" data-i18n="settings.exportConfig" data-i18n-title="tooltip.exportGlobalConfig" title=""><i class="fa-solid fa-file-export"></i> 导出配置</button>
+                        <button id="horae-settings-import" class="horae-rpg-btn-sm" data-i18n="settings.importConfig" data-i18n-title="tooltip.importConfigFile" title=""><i class="fa-solid fa-file-import"></i> 导入配置</button>
+                        <button id="horae-settings-reset" class="horae-rpg-btn-sm" data-i18n="settings.restoreDefaults" data-i18n-title="tooltip.restoreAllDefaults" title="" style="color:#ef4444;"><i class="fa-solid fa-rotate-left"></i> 恢复默认</button>
                     </div>
                 </div>
                 <div class="horae-settings-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="settings.basicSettings">
                         <i class="fa-solid fa-toggle-on"></i>
                         基本设置
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.uiLanguage">
+                            <i class="fa-solid fa-language"></i>
+                            界面语言 / UI Language
+                            <select id="horae-setting-ui-language" class="horae-select">
+                                <option value="auto" data-i18n="settings.uiLanguageAuto">自动检测 / Auto</option>
+                                <option value="zh-CN">简体中文</option>
+                                <option value="zh-TW">繁體中文</option>
+                                <option value="en">English</option>
+                                <option value="ko">한국어</option>
+                                <option value="ja">日本語</option>
+                            </select>
+                        </label>
+                        <span class="horae-setting-hint" data-i18n="settings.uiLanguageHint">
+                            <i class="fa-solid fa-circle-info"></i>
+                            插件界面显示语言。"自动检测"将根据浏览器/酒馆设置自动选择。
+                        </span>
+                    </div>
+                    <div class="horae-setting-item">
+                        <label data-i18n="settings.aiOutputLanguage">
+                            <i class="fa-solid fa-robot"></i>
+                            AI 输出语言 / AI Output Language
+                            <select id="horae-setting-ai-output-language" class="horae-select">
+                                <option value="auto" data-i18n="settings.aiOutputLanguageAuto">跟随界面语言 / Follow UI</option>
+                                <option value="zh-CN">简体中文</option>
+                                <option value="zh-TW">繁體中文</option>
+                                <option value="en">English</option>
+                                <option value="ko">한국어</option>
+                                <option value="ja">日本語</option>
+                            </select>
+                        </label>
+                        <span class="horae-setting-hint" data-i18n="settings.aiOutputLanguageHint">
+                            <i class="fa-solid fa-circle-info"></i>
+                            控制AI在horae标签中输出的语言（事件摘要、NPC描述等）。格式标记保持不变，仅影响描述性文字。
+                        </span>
+                    </div>
+
+                    <div class="horae-setting-item">
+                        <label data-i18n="settings.enableHorae">
                             <input type="checkbox" id="horae-setting-enabled" checked>
                             启用 Horae
                         </label>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.autoParse">
                             <input type="checkbox" id="horae-setting-auto-parse" checked>
                             自动解析AI回复中的标签
                         </label>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.injectContext">
                             <input type="checkbox" id="horae-setting-inject-context" checked>
                             自动注入状态上下文
                         </label>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.showPanel">
                             <input type="checkbox" id="horae-setting-show-panel" checked>
                             显示消息元数据面板
                         </label>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.showTopIcon">
                             <input type="checkbox" id="horae-setting-show-top-icon" checked>
                             显示顶部导航栏图标
                         </label>
-                        <span class="horae-setting-hint">
+                        <span class="horae-setting-hint" data-i18n="settings.showTopIconHint">
                             关闭后顶部图标完全隐藏，不留空位。可通过扩展面板（积木图标）中的「Horae 时光记忆」栏位重新开启。
                         </span>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.panelWidth">
                             面板宽度
                             <input type="number" id="horae-setting-panel-width" min="50" max="100" value="100">
                         </label>
-                        <label style="margin-left:12px;">
+                        <label data-i18n="settings.panelOffset" style="margin-left:12px;">
                             右偏移
                             <input type="range" id="horae-setting-panel-offset" min="0" max="300" value="0" style="width:100px;vertical-align:middle;">
                             <span id="horae-panel-offset-value" style="font-size:11px;color:var(--horae-text-muted);">0px</span>
                         </label>
-                        <span class="horae-setting-hint">
+                        <span class="horae-setting-hint" data-i18n="settings.panelWidthHint">
                             消息面板占聊天区域的宽度百分比（50-100）。宽屏美化可调低避免溢出。右偏移可微调面板水平位置。
                         </span>
                     </div>
                 </div>
 
                 <div class="horae-settings-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="settings.appearance">
                         <i class="fa-solid fa-palette"></i>
                         外观设置
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.pluginTheme">
                             插件主题
                             <select id="horae-setting-theme-mode" class="horae-select">
-                                <option value="dark">夜间模式</option>
-                                <option value="light">日间模式</option>
+                                <option value="dark" data-i18n="settings.darkMode">夜间模式</option>
+                                <option value="light" data-i18n="settings.lightMode">日间模式</option>
                             </select>
                         </label>
                         <div class="horae-theme-buttons">
-                            <button id="horae-btn-theme-import" class="horae-icon-btn" title="导入美化">
+                            <button id="horae-btn-theme-import" class="horae-icon-btn" data-i18n-title="tooltip.importTheme" title="">
                                 <i class="fa-solid fa-file-import"></i>
                             </button>
-                            <button id="horae-btn-theme-export" class="horae-icon-btn" title="导出当前美化">
+                            <button id="horae-btn-theme-export" class="horae-icon-btn" data-i18n-title="tooltip.exportTheme" title="">
                                 <i class="fa-solid fa-file-export"></i>
                             </button>
-                            <button id="horae-btn-theme-delete" class="horae-icon-btn" title="删除当前自定义美化">
+                            <button id="horae-btn-theme-delete" class="horae-icon-btn" data-i18n-title="tooltip.deleteTheme" title="">
                                 <i class="fa-solid fa-trash-can"></i>
                             </button>
                         </div>
-                        <span class="horae-setting-hint">
+                        <span class="horae-setting-hint" data-i18n="settings.themeHint">
                             <i class="fa-solid fa-circle-info"></i>
                             选择内置主题或导入的自定义美化。导入美化文件（.json）后会出现在下拉列表中。
                         </span>
-                        <button id="horae-btn-theme-designer" class="horae-btn" style="margin-top: 8px; width: 100%;">
+                        <button id="horae-btn-theme-designer" class="horae-btn" data-i18n="settings.themeDesigner" style="margin-top: 8px; width: 100%;">
                             <i class="fa-solid fa-paint-roller"></i> 自助美化工具
                         </button>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <div class="horae-section-header horae-collapse-header" id="horae-css-collapse-toggle" style="border-bottom:none; margin-bottom:0; padding-bottom:0;">
+                        <div class="horae-section-header horae-collapse-header" id="horae-css-collapse-toggle" data-i18n="settings.customCss" style="border-bottom:none; margin-bottom:0; padding-bottom:0;">
                             自定义CSS
                             <i class="fa-solid fa-chevron-down horae-collapse-icon collapsed"></i>
                         </div>
                         <div id="horae-css-collapse-body" style="display: none;">
-                            <span class="horae-setting-hint" style="margin-bottom: 8px;">
+                            <span class="horae-setting-hint" data-i18n="settings.customCssHint" style="margin-bottom: 8px;">
                                 <i class="fa-solid fa-circle-info"></i>
                                 输入自定义CSS覆盖插件样式。适合进阶用户微调配色。修改后切换焦点即生效。
                             </span>
@@ -551,17 +588,17 @@
                 </div>
                 
                 <div class="horae-settings-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="settings.advanced">
                         <i class="fa-solid fa-sliders"></i>
                         高级设置
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.contextDepth">
                             上下文深度
                             <input type="number" id="horae-setting-context-depth" min="0" max="999" value="15">
                         </label>
-                        <span class="horae-setting-hint">
+                        <span class="horae-setting-hint" data-i18n="settings.contextDepthHint">
                             <i class="fa-solid fa-circle-info"></i>
                             控制发送给AI的"一般"级别剧情轨迹数量：<br>
                             0 = 不发送一般事件（重要/关键照发）<br>
@@ -571,11 +608,11 @@
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.injectionPosition">
                             注入位置
                             <input type="number" id="horae-setting-injection-position" min="0" max="10" value="1">
                         </label>
-                        <span class="horae-setting-hint">
+                        <span class="horae-setting-hint" data-i18n="settings.injectionPositionHint">
                             <i class="fa-solid fa-circle-info"></i>
                             Horae状态信息插入到AI提示词的哪个位置：<br>
                             0 = 最末尾（紧贴最新消息）<br>
@@ -586,11 +623,11 @@
                 </div>
                 
                 <div class="horae-settings-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="settings.customTables">
                         <i class="fa-solid fa-table-cells"></i>
                         自定义表格
                     </div>
-                    <span class="horae-setting-hint" style="margin-bottom: 12px;">
+                    <span class="horae-setting-hint" data-i18n="settings.customTablesHint" style="margin-bottom: 12px;">
                         <i class="fa-solid fa-circle-info"></i>
                         创建Excel风格表格，让AI按你的需求填写特定信息。<br>
                         长按表头可添加/删除行列。每个表格可设置提示词指导AI如何填写。<br>
@@ -603,13 +640,13 @@
                     </div>
                     
                     <div class="horae-table-buttons">
-                        <button id="horae-btn-add-table-local" class="horae-btn-add-table">
+                        <button id="horae-btn-add-table-local" class="horae-btn-add-table" data-i18n="settings.addLocalTable">
                             <i class="fa-solid fa-plus"></i> 添加本地表格
                         </button>
-                        <button id="horae-btn-add-table-global" class="horae-btn-add-table">
+                        <button id="horae-btn-add-table-global" class="horae-btn-add-table" data-i18n="settings.addGlobalTable">
                             <i class="fa-solid fa-globe"></i> 添加全局表格
                         </button>
-                        <button id="horae-btn-import-table" class="horae-btn-import-table">
+                        <button id="horae-btn-import-table" class="horae-btn-import-table" data-i18n="settings.importTable">
                             <i class="fa-solid fa-upload"></i> 导入表格
                         </button>
                         <input type="file" id="horae-import-table-file" accept=".json" style="display:none;">
@@ -617,206 +654,206 @@
                 </div>
                 
                 <div class="horae-settings-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="settings.sendToAi">
                         <i class="fa-solid fa-paper-plane"></i>
                         发送给AI的内容
                     </div>
-                    <span class="horae-setting-hint" style="margin-bottom: 12px;">
+                    <span class="horae-setting-hint" data-i18n="settings.sendToAiHint" style="margin-bottom: 12px;">
                         <i class="fa-solid fa-circle-info"></i>
                         控制哪些信息会随提示词发送给AI。关闭可节省Token，但AI将无法"记住"这些内容。
                     </span>
-                    <div id="horae-token-counter" style="margin-bottom: 12px; padding: 8px 12px; background: var(--horae-bg); border: 1px solid var(--horae-border); border-radius: var(--horae-radius-sm); font-size: 12px; color: var(--horae-text-muted); display: flex; align-items: center; gap: 8px;">
+                    <div id="horae-token-counter" data-i18n="settings.tokenCounter" style="margin-bottom: 12px; padding: 8px 12px; background: var(--horae-bg); border: 1px solid var(--horae-border); border-radius: var(--horae-radius-sm); font-size: 12px; color: var(--horae-text-muted); display: flex; align-items: center; gap: 8px;">
                         <i class="fa-solid fa-microchip" style="color: var(--horae-primary-light);"></i>
-                        当前注入 Token：<strong id="horae-token-value" style="color: var(--horae-primary-light);">计算中...</strong>
+                        当前注入 Token：<strong id="horae-token-value" data-i18n="settings.tokenCalculating" style="color: var(--horae-primary-light);">计算中...</strong>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.sendTimeline">
                             <input type="checkbox" id="horae-setting-send-timeline" checked>
                             剧情轨迹
                         </label>
-                        <span class="horae-setting-sub-hint">历史事件摘要、相对时间计算。关闭后AI无法知道"几天前"发生了什么。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.sendTimelineHint">历史事件摘要、相对时间计算。关闭后AI无法知道"几天前"发生了什么。</span>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.sendCharacters">
                             <input type="checkbox" id="horae-setting-send-characters" checked>
                             角色信息
                         </label>
-                        <span class="horae-setting-sub-hint">在场角色、服装描述、好感度、角色信息。关闭后AI可能描写错误的服装。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.sendCharactersHint">在场角色、服装描述、好感度、角色信息。关闭后AI可能描写错误的服装。</span>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.sendItems">
                             <input type="checkbox" id="horae-setting-send-items" checked>
                             物品栏
                         </label>
-                        <span class="horae-setting-sub-hint">当前持有的物品及位置。关闭后AI可能"凭空"取出不存在的物品。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.sendItemsHint">当前持有的物品及位置。关闭后AI可能"凭空"取出不存在的物品。</span>
                     </div>
 
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.sendLocationMemory">
                             <input type="checkbox" id="horae-setting-send-location-memory">
                             场景记忆
                         </label>
-                        <span class="horae-setting-sub-hint">记录地点的固定物理特征，保持跨回合场景描写一致性。开启后AI会在首次到达新地点时记录特征描述。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.sendLocationMemoryHint">记录地点的固定物理特征，保持跨回合场景描写一致性。开启后AI会在首次到达新地点时记录特征描述。</span>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.sendRelationships">
                             <input type="checkbox" id="horae-setting-send-relationships">
                             关系网络
                         </label>
-                        <span class="horae-setting-sub-hint">追踪角色间的关系变化（朋友、恋人、敌对等），AI仅在关系变化时输出。关闭后不生成rel:标签，不注入关系网络提示词。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.sendRelationshipsHint">追踪角色间的关系变化（朋友、恋人、敌对等），AI仅在关系变化时输出。关闭后不生成rel:标签，不注入关系网络提示词。</span>
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.sendMood">
                             <input type="checkbox" id="horae-setting-send-mood">
                             情绪追踪
                         </label>
-                        <span class="horae-setting-sub-hint">追踪在场角色的情绪/心理状态变化，帮助AI保持角色情绪连贯性。AI仅在情绪明显变化时输出。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.sendMoodHint">追踪在场角色的情绪/心理状态变化，帮助AI保持角色情绪连贯性。AI仅在情绪明显变化时输出。</span>
                     </div>
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.rpgMode">
                             <input type="checkbox" id="horae-setting-rpg-mode">
                             RPG 模式
                         </label>
-                        <span class="horae-setting-sub-hint">启用后，AI 会在 &lt;horaerpg&gt; 标签中输出角色属性条（HP/MP/SP）和技能变化。关闭时不注入提示词、不消耗 Token。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.rpgModeHint">启用后，AI 会在 &lt;horaerpg&gt; 标签中输出角色属性条（HP/MP/SP）和技能变化。关闭时不注入提示词、不消耗 Token。</span>
                         <div id="horae-rpg-sub-options" style="display:none; margin-top:6px; padding-left:18px;">
                             <label style="display:block;margin-bottom:8px;padding:4px 8px;background:rgba(139,92,246,0.1);border-radius:6px;border:1px solid rgba(139,92,246,0.25);">
                                 <input type="checkbox" id="horae-setting-rpg-user-only">
-                                <strong>仅限主角模式</strong>
-                                <span style="font-size:0.85em;opacity:0.8;">— 一键切换：所有RPG模块只追踪USER（也可单独设置各模块）</span>
+                                <strong data-i18n="rpg.userOnlyMode">仅限主角模式</strong>
+                                <span data-i18n="rpg.userOnlyHint" style="font-size:0.85em;opacity:0.8;">— 一键切换：所有RPG模块只追踪USER（也可单独设置各模块）</span>
                             </label>
-                            <label style="display:block;margin-bottom:4px;">
+                            <label data-i18n="settings.rpgBars" style="display:block;margin-bottom:4px;">
                                 <input type="checkbox" id="horae-setting-rpg-bars" checked>
                                 发送属性条（HP/MP/SP/状态异常）
                             </label>
-                            <label class="horae-rpg-sub-toggle" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
+                            <label class="horae-rpg-sub-toggle" data-i18n="rpg.userOnlySub" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
                                 <input type="checkbox" id="horae-setting-rpg-bars-uo">
                                 ↳ 仅限主角
                             </label>
-                            <label style="display:block;margin-bottom:4px;">
+                            <label data-i18n="settings.rpgAttrs" style="display:block;margin-bottom:4px;">
                                 <input type="checkbox" id="horae-setting-rpg-attrs" checked>
                                 发送属性面板（多维属性）
                             </label>
-                            <label class="horae-rpg-sub-toggle" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
+                            <label class="horae-rpg-sub-toggle" data-i18n="rpg.userOnlySub" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
                                 <input type="checkbox" id="horae-setting-rpg-attrs-uo">
                                 ↳ 仅限主角
                             </label>
-                            <label style="display:block;margin-bottom:4px;">
+                            <label data-i18n="settings.rpgSkills" style="display:block;margin-bottom:4px;">
                                 <input type="checkbox" id="horae-setting-rpg-skills" checked>
                                 发送技能列表
                             </label>
-                            <label class="horae-rpg-sub-toggle" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
+                            <label class="horae-rpg-sub-toggle" data-i18n="rpg.userOnlySub" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
                                 <input type="checkbox" id="horae-setting-rpg-skills-uo">
                                 ↳ 仅限主角
                             </label>
-                            <label style="display:block;margin-bottom:4px;">
+                            <label data-i18n="settings.rpgReputation" style="display:block;margin-bottom:4px;">
                                 <input type="checkbox" id="horae-setting-rpg-reputation">
                                 声望系统（自定义势力声望追踪）
                             </label>
-                            <label class="horae-rpg-sub-toggle" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
+                            <label class="horae-rpg-sub-toggle" data-i18n="rpg.userOnlySub" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
                                 <input type="checkbox" id="horae-setting-rpg-reputation-uo">
                                 ↳ 仅限主角
                             </label>
-                            <label style="display:block;margin-bottom:4px;">
+                            <label data-i18n="settings.rpgEquipment" style="display:block;margin-bottom:4px;">
                                 <input type="checkbox" id="horae-setting-rpg-equipment">
                                 装备栏（格位、属性值追踪）
                             </label>
-                            <label class="horae-rpg-sub-toggle" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
+                            <label class="horae-rpg-sub-toggle" data-i18n="rpg.userOnlySub" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
                                 <input type="checkbox" id="horae-setting-rpg-equipment-uo">
                                 ↳ 仅限主角
                             </label>
-                            <label style="display:block;margin-bottom:4px;">
+                            <label data-i18n="settings.rpgLevel" style="display:block;margin-bottom:4px;">
                                 <input type="checkbox" id="horae-setting-rpg-level">
                                 等级 / 经验值
                             </label>
-                            <label class="horae-rpg-sub-toggle" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
+                            <label class="horae-rpg-sub-toggle" data-i18n="rpg.userOnlySub" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
                                 <input type="checkbox" id="horae-setting-rpg-level-uo">
                                 ↳ 仅限主角
                             </label>
-                            <label style="display:block;margin-bottom:4px;">
+                            <label data-i18n="settings.rpgCurrency" style="display:block;margin-bottom:4px;">
                                 <input type="checkbox" id="horae-setting-rpg-currency">
                                 货币系统（自定义币种与兑换比率）
                             </label>
-                            <label class="horae-rpg-sub-toggle" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
+                            <label class="horae-rpg-sub-toggle" data-i18n="rpg.userOnlySub" style="display:none;margin-bottom:4px;margin-left:22px;font-size:0.9em;">
                                 <input type="checkbox" id="horae-setting-rpg-currency-uo">
                                 ↳ 仅限主角
                             </label>
-                            <label style="display:block;margin-bottom:4px;">
+                            <label data-i18n="settings.rpgStronghold" style="display:block;margin-bottom:4px;">
                                 <input type="checkbox" id="horae-setting-rpg-stronghold">
                                 据点系统（据点/基地/领地经营）
                             </label>
-                            <label style="display:block;">
+                            <label data-i18n="settings.rpgDice" style="display:block;">
                                 <input type="checkbox" id="horae-setting-rpg-dice">
                                 骰子面板（掷骰注入聊天栏）
-                                <button id="horae-dice-reset-pos" class="horae-icon-btn small" title="重置骰子面板位置" style="margin-left:6px;vertical-align:middle;">
+                                <button id="horae-dice-reset-pos" class="horae-icon-btn small" data-i18n-title="tooltip.resetDicePos" title="" style="margin-left:6px;vertical-align:middle;">
                                     <i class="fa-solid fa-location-crosshairs"></i>
                                 </button>
                             </label>
                         </div>
                     </div>
                     <div class="horae-setting-item" style="border-top: 1px solid var(--horae-border); padding-top: 8px; margin-top: 4px;">
-                        <label>
+                        <label data-i18n="settings.antiParaphrase">
                             <input type="checkbox" id="horae-setting-anti-paraphrase">
                             反转述模式
                         </label>
-                        <span class="horae-setting-sub-hint">适用于「USER自己描写行为/动作，AI不再转述USER部分」的写法。开启后，AI回复时会将上一条USER消息的内容也纳入本条<horae>标签的结算，确保USER的行为不遗漏。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.antiParaphraseHint">适用于「USER自己描写行为/动作，AI不再转述USER部分」的写法。开启后，AI回复时会将上一条USER消息的内容也纳入本条<horae>标签的结算，确保USER的行为不遗漏。</span>
                     </div>
                     <div class="horae-setting-item">
-                        <label>
+                        <label data-i18n="settings.sideplayMode">
                             <input type="checkbox" id="horae-setting-sideplay-mode">
                             番外/小剧场模式
                         </label>
-                        <span class="horae-setting-sub-hint">启用后，底部面板会出现「标记为番外」按钮。被标记的消息不会被Horae追踪、不参与自动摘要，适合在主线中穿插if/番外/小剧场。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.sideplayModeHint">启用后，底部面板会出现「标记为番外」按钮。被标记的消息不会被Horae追踪、不参与自动摘要，适合在主线中穿插if/番外/小剧场。</span>
                     </div>
                 </div>
                 
                 <div class="horae-settings-section">
-                    <div class="horae-section-header horae-collapse-header" id="horae-autosummary-collapse-toggle">
+                    <div class="horae-section-header horae-collapse-header" id="horae-autosummary-collapse-toggle" data-i18n="settings.autoSummary">
                         <i class="fa-solid fa-compress"></i>
                         自动摘要 & 隐藏
                         <i class="fa-solid fa-chevron-down horae-collapse-icon collapsed"></i>
                     </div>
                     <div id="horae-autosummary-collapse-body" style="display: none;">
-                        <span class="horae-setting-hint" style="margin-bottom: 12px;">
+                        <span class="horae-setting-hint" data-i18n="settings.autoSummaryHint" style="margin-bottom: 12px;">
                             <i class="fa-solid fa-circle-info"></i>
                             超过缓冲上限后自动将旧事件交给AI压缩为摘要，节省Token。<br>
                             压缩后的摘要可在时间线中切换回原始事件查看。
                         </span>
                         <div class="horae-setting-item">
-                            <label>
+                            <label data-i18n="settings.enableAutoSummary">
                                 <input type="checkbox" id="horae-setting-auto-summary">
                                 启用自动摘要
                             </label>
                         </div>
                         <div id="horae-auto-summary-options" style="display: none;">
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="settings.keepRecentMessages">
                                     保留最近消息数
                                     <input type="number" id="horae-setting-auto-summary-keep" min="3" max="100" value="10">
                                 </label>
-                                <span class="horae-setting-sub-hint">最近N条消息<b>绝对不会</b>被摘要。确保近期剧情细节完整保留。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="settings.keepRecentHint">最近N条消息<b>绝对不会</b>被摘要。确保近期剧情细节完整保留。</span>
                             </div>
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="settings.bufferMode">
                                     缓冲模式
                                     <select id="horae-setting-auto-summary-mode">
-                                        <option value="messages">按楼层数</option>
-                                        <option value="tokens">按Token数</option>
+                                        <option value="messages" data-i18n="settings.bufferModeMessages">按楼层数</option>
+                                        <option value="tokens" data-i18n="settings.bufferModeTokens">按Token数</option>
                                     </select>
                                 </label>
                             </div>
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="settings.bufferLimit">
                                     缓冲上限
                                     <input type="number" id="horae-setting-auto-summary-limit" min="5" max="99999" value="20">
                                 </label>
-                                <span class="horae-setting-sub-hint" id="horae-auto-summary-limit-hint">超过此上限时触发自动压缩。</span>
+                                <span class="horae-setting-sub-hint" id="horae-auto-summary-limit-hint" data-i18n="settings.bufferLimitHint">超过此上限时触发自动压缩。</span>
                             </div>
-                            <div class="horae-setting-hint" style="margin:8px 0; padding:8px; border-radius:6px; background:var(--horae-bg-secondary); font-size:11px; line-height:1.6;">
+                            <div class="horae-setting-hint" data-i18n="settings.autoSummaryExample" style="margin:8px 0; padding:8px; border-radius:6px; background:var(--horae-bg-secondary); font-size:11px; line-height:1.6;">
                                 <i class="fa-solid fa-lightbulb" style="color:var(--horae-accent);"></i>
                                 <b>举例</b>：假设保留=10，缓冲上限=20（楼层模式）<br>
                                 → 你聊到第 50 楼时：第 41-50 楼<b>绝对保留</b>不摘要<br>
@@ -825,60 +862,60 @@
                                 简单理解：<b>保留 + 缓冲 = 多少楼之后才开始摘要</b>
                             </div>
                             <div class="horae-setting-item" style="border-top: 1px solid var(--horae-border); padding-top: 8px; margin-top: 4px;">
-                                <label>
+                                <label data-i18n="settings.batchMaxMessages">
                                     单次最大消息条数
                                     <input type="number" id="horae-setting-auto-summary-batch-msgs" min="5" max="500" value="50">
                                 </label>
-                                <span class="horae-setting-sub-hint">每次自动摘要最多处理多少条消息。旧档案首次启用时会分多轮逐步消化。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="settings.batchMaxMessagesHint">每次自动摘要最多处理多少条消息。旧档案首次启用时会分多轮逐步消化。</span>
                             </div>
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="settings.batchMaxTokens">
                                     单次最大 Token 数
                                     <input type="number" id="horae-setting-auto-summary-batch-tokens" min="10000" max="1000000" step="10000" value="80000">
                                 </label>
-                                <span class="horae-setting-sub-hint">
+                                <span class="horae-setting-sub-hint" data-i18n="settings.batchMaxTokensHint">
                                     每次摘要送入的文本 Token 上限，超出则截断至此值。<br>
                                     参考各模型上下文窗口（建议设为 30%~50%）：<br>
                                     Claude ≈ 80K~200K · GPT-4o ≈ 80K~128K · Gemini ≈ 100K~1000K · DeepSeek ≈ 64K
                                 </span>
                             </div>
                             <div class="horae-setting-item" style="border-top: 1px solid var(--horae-border); padding-top: 8px; margin-top: 4px;">
-                                <label>
+                                <label data-i18n="settings.useIndependentApi">
                                     <input type="checkbox" id="horae-setting-auto-summary-custom-api">
                                     使用独立 API（省钱 & 真并行）
                                 </label>
-                                <span class="horae-setting-sub-hint">填入一个 OpenAI 兼容端点，摘要生成将直接请求该端点，不占用酒馆主连接。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="settings.useIndependentApiHint">填入一个 OpenAI 兼容端点，摘要生成将直接请求该端点，不占用酒馆主连接。</span>
                             </div>
                             <div id="horae-auto-summary-api-options" style="display: none;">
                                 <div class="horae-setting-item">
-                                    <label>API 地址</label>
+                                    <label data-i18n="settings.summaryApiUrl">API 地址</label>
                                     <input type="text" id="horae-setting-auto-summary-api-url" class="horae-edit-field"
                                         placeholder="https://api.openai.com/v1">
-                                    <span class="horae-setting-sub-hint">OpenAI 兼容端点基础地址，如 https://api.openai.com/v1</span>
+                                    <span class="horae-setting-sub-hint" data-i18n="settings.summaryApiUrlHint">OpenAI 兼容端点基础地址，如 https://api.openai.com/v1</span>
                                 </div>
                                 <div class="horae-setting-item">
-                                    <label>API 密钥</label>
+                                    <label data-i18n="settings.summaryApiKey">API 密钥</label>
                                     <input type="password" id="horae-setting-auto-summary-api-key" class="horae-edit-field"
                                         placeholder="sk-...">
                                 </div>
                                 <div class="horae-setting-item">
-                                    <label>模型</label>
+                                    <label data-i18n="settings.summaryModel">模型</label>
                                     <div style="display:flex; gap:4px; align-items:center;">
                                         <select id="horae-setting-auto-summary-model" class="horae-edit-field" style="flex:1; min-width:0;">
                                             <option value="">-- 请先拉取模型列表 --</option>
                                         </select>
-                                        <button id="horae-btn-fetch-models" class="horae-btn" style="white-space:nowrap; padding:4px 8px;" title="拉取模型列表">
+                                        <button id="horae-btn-fetch-models" class="horae-btn" style="white-space:nowrap; padding:4px 8px;" data-i18n-title="tooltip.fetchModels" title="">
                                             <i class="fa-solid fa-arrows-rotate"></i>
                                         </button>
                                     </div>
-                                    <span class="horae-setting-sub-hint">填好地址和密钥后点击 <i class="fa-solid fa-arrows-rotate"></i> 拉取。低成本模型即可。</span>
+                                    <span class="horae-setting-sub-hint" data-i18n="settings.summaryFetchModelsHint">填好地址和密钥后点击 <i class="fa-solid fa-arrows-rotate"></i> 拉取。低成本模型即可。</span>
                                 </div>
                                 <div class="horae-setting-item" style="margin-top:6px;">
-                                    <button id="horae-btn-test-sub-api" class="horae-btn" style="width:100%;">
+                                    <button id="horae-btn-test-sub-api" class="horae-btn" data-i18n="settings.testSubApi" style="width:100%;">
                                         <i class="fa-solid fa-plug-circle-check"></i> 测试副API连接
                                     </button>
                                 </div>
-                                <span class="horae-setting-sub-hint">
+                                <span class="horae-setting-sub-hint" data-i18n="settings.subApiHint">
                                     <i class="fa-solid fa-circle-info"></i>
                                     填写完成后，自动摘要将通过独立 HTTP 请求并行生成，不影响酒馆主 API。<br>
                                     支持所有 OpenAI 兼容格式的端点（OpenAI、DeepSeek、OpenRouter 等）。<br>
@@ -890,37 +927,37 @@
                 </div>
 
                 <div class="horae-settings-section">
-                    <div class="horae-section-header horae-collapse-header" id="horae-vector-collapse-toggle">
+                    <div class="horae-section-header horae-collapse-header" id="horae-vector-collapse-toggle" data-i18n="settings.vectorMemory">
                         <i class="fa-solid fa-brain"></i>
                         向量记忆 (Beta)
                         <i class="fa-solid fa-chevron-down horae-collapse-icon collapsed"></i>
                     </div>
                     <div id="horae-vector-collapse-body" style="display: none;">
-                        <span class="horae-setting-hint" style="margin-bottom: 12px;">
+                        <span class="horae-setting-hint" data-i18n="vector.hint" style="margin-bottom: 12px;">
                             <i class="fa-solid fa-circle-info"></i>
                             对 Horae 标签数据做向量检索，自动召回相关历史片段注入给 AI。<br>
                             <strong>本地模式：</strong>下载约 25MB 量化模型到浏览器缓存，占用 50-80MB 内存，⚠ 2GB 以下手机或云酒馆不建议使用，请务必确保有配置—max-old-space-size解除Node.js运行内存限制再启用。<br>
                             <strong>API 模式：</strong>使用远程 Embedding API，无需本地资源。
                         </span>
                         <div class="horae-setting-item">
-                            <label>
+                            <label data-i18n="vector.enableVector">
                                 <input type="checkbox" id="horae-setting-vector-enabled">
                                 启用向量记忆
                             </label>
                         </div>
                         <div id="horae-vector-options" style="display: none;">
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="vector.vectorSource">
                                     向量来源
                                     <select id="horae-setting-vector-source">
-                                        <option value="local">本地模型（浏览器内运行）</option>
-                                        <option value="api">远程 Embedding API</option>
+                                        <option value="local" data-i18n="vector.sourceLocal">本地模型（浏览器内运行）</option>
+                                        <option value="api" data-i18n="vector.sourceApi">远程 Embedding API</option>
                                     </select>
                                 </label>
                             </div>
                             <div id="horae-vector-local-options">
                                 <div class="horae-setting-item">
-                                    <label>
+                                    <label data-i18n="vector.embeddingModel">
                                         嵌入模型
                                         <select id="horae-setting-vector-model">
                                             <option value="Xenova/bge-small-zh-v1.5">bge-small-zh-v1.5 (中文优化, ~24MB)</option>
@@ -929,54 +966,54 @@
                                     </label>
                                 </div>
                                 <div class="horae-setting-item">
-                                    <label>
+                                    <label data-i18n="vector.quantization">
                                         量化精度
                                         <select id="horae-setting-vector-dtype">
                                             <option value="q8">q8（推荐，精度损失极小）</option>
                                             <option value="q4">q4（速度快/内存省，精度略降）</option>
                                         </select>
                                     </label>
-                                    <span class="horae-setting-sub-hint">q4 适合大多数设备；q8 精度更高但体积翻倍。</span>
+                                    <span class="horae-setting-sub-hint" data-i18n="vector.quantizationHint">q4 适合大多数设备；q8 精度更高但体积翻倍。</span>
                                 </div>
                             </div>
                             <div id="horae-vector-api-options" style="display: none;">
-                                <span class="horae-setting-hint" style="margin-bottom: 8px; color: #e67e22;">
+                                <span class="horae-setting-hint" data-i18n="vector.apiWarning" style="margin-bottom: 8px; color: #e67e22;">
                                     <i class="fa-solid fa-triangle-exclamation"></i>
                                     <strong> 只能填写 Embedding（嵌入/向量）模型！</strong><br>
                                     不要填 LLM 聊天模型（如 gemini 3、gpt-4 等），否则会报错。<br>
                                     推荐：<code>text-embedding-v3</code>（Qwen）、<code>text-embedding-3-small</code>（OpenAI）
                                 </span>
                                 <div class="horae-setting-item">
-                                    <label>
+                                    <label data-i18n="vector.apiUrl">
                                         API 地址
                                         <input type="text" id="horae-setting-vector-api-url" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1">
                                     </label>
-                                    <span class="horae-setting-sub-hint">OpenAI 兼容格式，会自动拼接 /embeddings 路径。<br>例，填：https://dashscope.aliyuncs.com/compatible-mode/v1</span>
+                                    <span class="horae-setting-sub-hint" data-i18n="vector.apiUrlHint">OpenAI 兼容格式，会自动拼接 /embeddings 路径。<br>例，填：https://dashscope.aliyuncs.com/compatible-mode/v1</span>
                                 </div>
                                 <div class="horae-setting-item">
-                                    <label>
+                                    <label data-i18n="vector.apiKey">
                                         API 密钥
                                         <input type="password" id="horae-setting-vector-api-key" placeholder="sk-...">
                                     </label>
                                 </div>
                                 <div class="horae-setting-item">
-                                    <label>Embedding 模型</label>
+                                    <label data-i18n="vector.embeddingModelLabel">Embedding 模型</label>
                                     <div style="display:flex; gap:4px; align-items:center;">
                                         <select id="horae-setting-vector-api-model" class="horae-edit-field" style="flex:1; min-width:0;">
                                             <option value="">-- 请先拉取模型列表 --</option>
                                         </select>
-                                        <button id="horae-btn-fetch-embed-models" class="horae-btn" style="white-space:nowrap; padding:4px 8px;" title="拉取模型列表">
+                                        <button id="horae-btn-fetch-embed-models" class="horae-btn" style="white-space:nowrap; padding:4px 8px;" data-i18n-title="tooltip.fetchModels" title="">
                                             <i class="fa-solid fa-arrows-rotate"></i>
                                         </button>
                                     </div>
-                                    <span class="horae-setting-sub-hint">填好地址和密钥后点击 <i class="fa-solid fa-arrows-rotate"></i> 拉取。<br>推荐: text-embedding-v3 (Qwen) / text-embedding-3-small (OpenAI)</span>
+                                    <span class="horae-setting-sub-hint" data-i18n="vector.fetchModelsHint">填好地址和密钥后点击 <i class="fa-solid fa-arrows-rotate"></i> 拉取。<br>推荐: text-embedding-v3 (Qwen) / text-embedding-3-small (OpenAI)</span>
                                 </div>
                                 <div class="horae-setting-item">
-                                    <label>
+                                    <label data-i18n="vector.pureMode">
                                         <input type="checkbox" id="horae-setting-vector-pure-mode">
                                         纯向量模式（强模型优化）
                                     </label>
-                                    <span class="horae-setting-hint" style="margin-top: 4px;">
+                                    <span class="horae-setting-hint" data-i18n="vector.pureModeHint" style="margin-top: 4px;">
                                         <i class="fa-solid fa-circle-info"></i>
                                         适用于高维度 API 模型（如 Qwen3-Embedding、text-embedding-3-large 等）。<br>
                                         开启后将<strong>关闭关键词扩展、事件词组匹配、高频词惩罚</strong>等辅助启发式，<br>
@@ -986,11 +1023,11 @@
                                     </span>
                                 </div>
                                 <div class="horae-setting-item" style="margin-top: 8px;">
-                                    <label>
+                                    <label data-i18n="vector.enableRerank">
                                         <input type="checkbox" id="horae-setting-vector-rerank-enabled">
                                         启用 Rerank 二次排序
                                     </label>
-                                    <span class="horae-setting-hint" style="margin-top: 4px;">
+                                    <span class="horae-setting-hint" data-i18n="vector.rerankHint" style="margin-top: 4px;">
                                         <i class="fa-solid fa-circle-info"></i>
                                         向量召回后，再用 Rerank 模型对候选结果做精细排序，显著提升召回精度，<br>
                                         把真正相关的排到前面，不太相关的压下去，让 AI 收到的记忆更准确。<br>
@@ -1000,35 +1037,35 @@
                                 </div>
                                 <div id="horae-vector-rerank-options" style="display: none;">
                                     <div class="horae-setting-item">
-                                        <label>
+                                        <label data-i18n="vector.rerankUrl">
                                             Rerank API 地址（选填）
                                             <input type="text" id="horae-setting-vector-rerank-url" placeholder="留空则复用 Embedding API 地址">
                                         </label>
                                     </div>
                                     <div class="horae-setting-item">
-                                        <label>
+                                        <label data-i18n="vector.rerankKey">
                                             Rerank API 密钥（选填）
                                             <input type="password" id="horae-setting-vector-rerank-key" placeholder="留空则复用 Embedding API 密钥">
                                         </label>
                                     </div>
                                     <div class="horae-setting-item">
-                                        <label>Rerank 模型</label>
+                                        <label data-i18n="vector.rerankModel">Rerank 模型</label>
                                         <div style="display:flex; gap:4px; align-items:center;">
                                             <select id="horae-setting-vector-rerank-model" class="horae-edit-field" style="flex:1; min-width:0;">
                                                 <option value="">-- 请先拉取模型列表 --</option>
                                             </select>
-                                            <button id="horae-btn-fetch-rerank-models" class="horae-btn" style="white-space:nowrap; padding:4px 8px;" title="拉取模型列表">
+                                            <button id="horae-btn-fetch-rerank-models" class="horae-btn" style="white-space:nowrap; padding:4px 8px;" data-i18n-title="tooltip.fetchModels" title="">
                                                 <i class="fa-solid fa-arrows-rotate"></i>
                                             </button>
                                         </div>
-                                        <span class="horae-setting-sub-hint">填好地址和密钥后点击 <i class="fa-solid fa-arrows-rotate"></i> 拉取。<br>推荐: gte-rerank (Qwen) / jina-reranker-v2-base-multilingual (Jina)</span>
+                                        <span class="horae-setting-sub-hint" data-i18n="vector.rerankFetchHint">填好地址和密钥后点击 <i class="fa-solid fa-arrows-rotate"></i> 拉取。<br>推荐: gte-rerank (Qwen) / jina-reranker-v2-base-multilingual (Jina)</span>
                                     </div>
                                     <div class="horae-setting-item" style="margin-top: 4px;">
-                                        <label>
+                                        <label data-i18n="vector.rerankFulltext">
                                             <input type="checkbox" id="horae-setting-vector-rerank-fulltext">
                                             Rerank 全文精排
                                         </label>
-                                        <span class="horae-setting-hint" style="margin-top: 4px; color: #e6a23c;">
+                                        <span class="horae-setting-hint" data-i18n="vector.rerankFulltextHint" style="margin-top: 4px; color: #e6a23c;">
                                             <i class="fa-solid fa-triangle-exclamation"></i>
                                             默认 Rerank 使用摘要进行排序。开启后将使用<strong>原始消息全文</strong>进行精排，<br>
                                             可以捕捉到摘要遗漏的细节，但对模型的上下文长度要求很高。<br>
@@ -1041,39 +1078,39 @@
                                 </div>
                             </div>
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="vector.topK">
                                     召回条数 (Top-K)
                                     <input type="number" id="horae-setting-vector-topk" min="1" max="10" value="5">
                                 </label>
-                                <span class="horae-setting-sub-hint">每次发送消息时，从向量库召回最相关的 K 条记忆注入上下文。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="vector.topKHint">每次发送消息时，从向量库召回最相关的 K 条记忆注入上下文。</span>
                             </div>
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="vector.threshold">
                                     最低相似度阈值
                                     <input type="number" id="horae-setting-vector-threshold" min="0.3" max="0.95" step="0.01" value="0.72">
                                 </label>
-                                <span class="horae-setting-sub-hint">相似度低于此值的记忆不会被召回。提高此值可减少噪音。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="vector.thresholdHint">相似度低于此值的记忆不会被召回。提高此值可减少噪音。</span>
                             </div>
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="vector.fulltextCount">
                                     全文回顾条数
                                     <input type="number" id="horae-setting-vector-fulltext-count" min="0" max="5" value="3">
                                 </label>
-                                <span class="horae-setting-sub-hint">排名前 N 且达到全文阈值的召回结果会发送原始正文而非摘要。设为 0 关闭此功能。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="vector.fulltextCountHint">排名前 N 且达到全文阈值的召回结果会发送原始正文而非摘要。设为 0 关闭此功能。</span>
                             </div>
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="vector.fulltextThreshold">
                                     全文回顾阈值
                                     <input type="number" id="horae-setting-vector-fulltext-threshold" min="0.6" max="1.0" step="0.01" value="0.9">
                                 </label>
-                                <span class="horae-setting-sub-hint">只有相似度达到此值的高置信度结果才会发送全文，避免不相关内容浪费 Token。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="vector.fulltextThresholdHint">只有相似度达到此值的高置信度结果才会发送全文，避免不相关内容浪费 Token。</span>
                             </div>
                             <div class="horae-setting-item">
-                                <label>
+                                <label data-i18n="vector.stripTags">
                                     内容剔除标签
                                     <input type="text" id="horae-setting-vector-strip-tags" class="horae-edit-field" placeholder="snow, theater, side">
                                 </label>
-                                <span class="horae-setting-sub-hint">
+                                <span class="horae-setting-sub-hint" data-i18n="vector.stripTagsHint">
                                     用逗号分隔标签名。以下场景会整段移除这些标签包裹的内容：<br>
                                     · <b>向量检索</b>全文回顾 &amp; Rerank 全文精排<br>
                                     · <b>时间线解析</b>：防止小剧场内的 horae 标签污染正文时间线<br>
@@ -1083,7 +1120,7 @@
                                 </span>
                             </div>
                             <div class="horae-vector-status">
-                                <span id="horae-vector-status-text">模型未加载</span>
+                                <span id="horae-vector-status-text" data-i18n="vector.modelNotLoaded">模型未加载</span>
                                 <span id="horae-vector-index-count"></span>
                             </div>
                             <div class="horae-vector-progress" id="horae-vector-progress" style="display:none;">
@@ -1093,13 +1130,13 @@
                                 <span id="horae-vector-progress-text"></span>
                             </div>
                             <div class="horae-vector-buttons">
-                                <button id="horae-btn-vector-build" class="horae-vector-btn build" title="为当前对话的所有消息构建向量索引">
+                                <button id="horae-btn-vector-build" class="horae-vector-btn build" data-i18n-title="tooltip.buildVectorIndex" title="">
                                     <i class="fa-solid fa-hammer"></i>
-                                    <span>构建索引</span>
+                                    <span data-i18n="vector.buildIndex">构建索引</span>
                                 </button>
-                                <button id="horae-btn-vector-clear" class="horae-vector-btn clear" title="清除当前对话的向量索引">
+                                <button id="horae-btn-vector-clear" class="horae-vector-btn clear" data-i18n-title="tooltip.clearVectorIndex" title="">
                                     <i class="fa-solid fa-trash-can"></i>
-                                    <span>清除索引</span>
+                                    <span data-i18n="vector.clearIndex">清除索引</span>
                                 </button>
                             </div>
                         </div>
@@ -1107,36 +1144,36 @@
                 </div>
 
                 <div class="horae-settings-section">
-                    <div class="horae-section-header horae-collapse-header" id="horae-prompt-collapse-toggle">
+                    <div class="horae-section-header horae-collapse-header" id="horae-prompt-collapse-toggle" data-i18n="settings.customPrompts">
                         <i class="fa-solid fa-scroll"></i>
                         自定义提示词
                         <i class="fa-solid fa-chevron-down horae-collapse-icon collapsed"></i>
                     </div>
                     <div id="horae-prompt-collapse-body" style="display: none;">
-                        <span class="horae-setting-hint" style="margin-bottom: 12px;">
+                        <span class="horae-setting-hint" data-i18n="prompts.hint" style="margin-bottom: 12px;">
                             <i class="fa-solid fa-circle-info"></i>
                             自定义发送给AI的规则提示词。修改后AI将按你的规则输出标签。可用预设存档快速切换不同角色卡的配置。
                         </span>
                         <div class="horae-prompt-presets-bar">
                             <i class="fa-solid fa-bookmark" style="opacity:.5;font-size:12px"></i>
-                            <select id="horae-prompt-preset-select" title="提示词预设"></select>
-                            <button id="horae-prompt-preset-load" class="horae-rpg-btn-sm" title="加载选中预设"><i class="fa-solid fa-download"></i></button>
+                            <select id="horae-prompt-preset-select" data-i18n-title="tooltip.promptPreset" title=""></select>
+                            <button id="horae-prompt-preset-load" class="horae-rpg-btn-sm" data-i18n-title="tooltip.loadPreset" title=""><i class="fa-solid fa-download"></i></button>
                         </div>
                         <div class="horae-prompt-presets-bar horae-prompt-presets-actions" style="margin-top:-6px;justify-content:flex-end;flex-wrap:wrap;row-gap:4px;">
-                            <button id="horae-prompt-preset-save" class="horae-rpg-btn-sm" title="保存当前提示词到选中预设"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
-                            <button id="horae-prompt-preset-new" class="horae-rpg-btn-sm" title="另存为新预设"><i class="fa-solid fa-plus"></i> 新建</button>
-                            <button id="horae-prompt-preset-delete" class="horae-rpg-btn-sm" title="删除选中预设"><i class="fa-solid fa-trash"></i> 删除</button>
+                            <button id="horae-prompt-preset-save" class="horae-rpg-btn-sm" data-i18n="prompts.savePreset" data-i18n-title="tooltip.savePreset" title=""><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+                            <button id="horae-prompt-preset-new" class="horae-rpg-btn-sm" data-i18n="prompts.newPreset" data-i18n-title="tooltip.newPreset" title=""><i class="fa-solid fa-plus"></i> 新建</button>
+                            <button id="horae-prompt-preset-delete" class="horae-rpg-btn-sm" data-i18n="prompts.deletePreset" data-i18n-title="tooltip.deletePreset" title=""><i class="fa-solid fa-trash"></i> 删除</button>
                             <span class="horae-prompt-presets-sep" style="border-left:1px solid var(--horae-border);height:16px;margin:0 2px;opacity:.3"></span>
-                            <button id="horae-prompt-preset-export" class="horae-rpg-btn-sm" title="导出提示词为文件"><i class="fa-solid fa-file-export"></i> 导出</button>
-                            <button id="horae-prompt-preset-import" class="horae-rpg-btn-sm" title="从文件导入提示词"><i class="fa-solid fa-file-import"></i> 导入</button>
+                            <button id="horae-prompt-preset-export" class="horae-rpg-btn-sm" data-i18n="prompts.exportAll" data-i18n-title="tooltip.exportPrompts" title=""><i class="fa-solid fa-file-export"></i> 导出</button>
+                            <button id="horae-prompt-preset-import" class="horae-rpg-btn-sm" data-i18n="prompts.importAll" data-i18n-title="tooltip.importPrompts" title=""><i class="fa-solid fa-file-import"></i> 导入</button>
                             <span class="horae-prompt-presets-sep" style="border-left:1px solid var(--horae-border);height:16px;margin:0 2px;opacity:.3"></span>
-                            <button id="horae-prompt-reset-all" class="horae-rpg-btn-sm" title="全部恢复默认提示词" style="color:#ef4444;"><i class="fa-solid fa-rotate-left"></i> 全部重置</button>
+                            <button id="horae-prompt-reset-all" class="horae-rpg-btn-sm" data-i18n="prompts.resetAll" data-i18n-title="tooltip.resetAllPrompts" title="" style="color:#ef4444;"><i class="fa-solid fa-rotate-left"></i> 全部重置</button>
                         </div>
                         
                         <div class="horae-prompt-editor-group">
                             <div class="horae-prompt-editor-header">
-                                <span>系统注入提示词</span>
-                                <button id="horae-btn-reset-system-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.systemPrompt">系统注入提示词</span>
+                                <button id="horae-btn-reset-system-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1148,8 +1185,8 @@
                         
                         <div class="horae-prompt-editor-group" style="margin-top: 12px;">
                             <div class="horae-prompt-editor-header">
-                                <span>AI 智能摘要提示词</span>
-                                <button id="horae-btn-reset-batch-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.batchPrompt">AI 智能摘要提示词</span>
+                                <button id="horae-btn-reset-batch-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1161,8 +1198,8 @@
 
                         <div class="horae-prompt-editor-group" style="margin-top: 12px;">
                             <div class="horae-prompt-editor-header">
-                                <span>AI 分析提示词</span>
-                                <button id="horae-btn-reset-analysis-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.analysisPrompt">AI 分析提示词</span>
+                                <button id="horae-btn-reset-analysis-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1174,8 +1211,8 @@
 
                         <div class="horae-prompt-editor-group" style="margin-top: 12px;">
                             <div class="horae-prompt-editor-header">
-                                <span>剧情压缩提示词（手动压缩）</span>
-                                <button id="horae-btn-reset-compress-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.compressPrompt">剧情压缩提示词（手动压缩）</span>
+                                <button id="horae-btn-reset-compress-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1187,8 +1224,8 @@
 
                         <div class="horae-prompt-editor-group" style="margin-top: 12px;">
                             <div class="horae-prompt-editor-header">
-                                <span>自动摘要提示词（自动摘要&隐藏）</span>
-                                <button id="horae-btn-reset-auto-summary-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.autoSummaryPrompt">自动摘要提示词（自动摘要&隐藏）</span>
+                                <button id="horae-btn-reset-auto-summary-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1200,8 +1237,8 @@
 
                         <div class="horae-prompt-editor-group" style="margin-top: 12px;">
                             <div class="horae-prompt-editor-header">
-                                <span>表格填写规则提示词</span>
-                                <button id="horae-btn-reset-tables-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.tablesPrompt">表格填写规则提示词</span>
+                                <button id="horae-btn-reset-tables-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1213,8 +1250,8 @@
 
                         <div id="horae-location-prompt-group" class="horae-prompt-editor-group" style="margin-top: 12px; display: none;">
                             <div class="horae-prompt-editor-header">
-                                <span>场景记忆提示词</span>
-                                <button id="horae-btn-reset-location-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.locationPrompt">场景记忆提示词</span>
+                                <button id="horae-btn-reset-location-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1226,8 +1263,8 @@
 
                         <div id="horae-relationship-prompt-group" class="horae-prompt-editor-group" style="margin-top: 12px; display: none;">
                             <div class="horae-prompt-editor-header">
-                                <span>关系网络提示词</span>
-                                <button id="horae-btn-reset-relationship-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.relationshipPrompt">关系网络提示词</span>
+                                <button id="horae-btn-reset-relationship-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1239,8 +1276,8 @@
 
                         <div id="horae-mood-prompt-group" class="horae-prompt-editor-group" style="margin-top: 12px; display: none;">
                             <div class="horae-prompt-editor-header">
-                                <span>情绪追踪提示词</span>
-                                <button id="horae-btn-reset-mood-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.moodPrompt">情绪追踪提示词</span>
+                                <button id="horae-btn-reset-mood-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1252,8 +1289,8 @@
 
                         <div id="horae-rpg-prompt-group" class="horae-prompt-editor-group" style="margin-top: 12px; display: none;">
                             <div class="horae-prompt-editor-header">
-                                <span>RPG 模式提示词</span>
-                                <button id="horae-btn-reset-rpg-prompt" class="horae-btn-reset-prompt" title="恢复默认">
+                                <span data-i18n="prompts.rpgPrompt">RPG 模式提示词</span>
+                                <button id="horae-btn-reset-rpg-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
                             </div>
@@ -1266,46 +1303,46 @@
                 </div>
                 
                 <div class="horae-settings-section">
-                    <div class="horae-section-header">
+                    <div class="horae-section-header" data-i18n="settings.dataManagement">
                         <i class="fa-solid fa-database"></i>
                         数据管理
                     </div>
                     
                     <div class="horae-data-buttons-grid">
-                        <button id="horae-btn-scan-history" class="horae-data-btn primary" title="扫描所有消息中的&lt;horae&gt;和&lt;horaeevent&gt;标签，补全缺失的元数据（不消耗生成次数）">
+                        <button id="horae-btn-scan-history" class="horae-data-btn primary" data-i18n-title="tooltip.scanTags" title="">
                             <i class="fa-solid fa-magnifying-glass-chart"></i>
-                            <span>扫描标签</span>
+                            <span data-i18n="settings.scanTags">扫描标签</span>
                         </button>
-                        <button id="horae-btn-ai-scan" class="horae-data-btn primary" title="用AI分析历史消息，提取剧情事件和物品（自动分批，可撤销）">
+                        <button id="horae-btn-ai-scan" class="horae-data-btn primary" data-i18n-title="tooltip.aiScan" title="">
                             <i class="fa-solid fa-wand-magic-sparkles"></i>
-                            <span>AI智能摘要</span>
+                            <span data-i18n="settings.aiSmartSummary">AI智能摘要</span>
                         </button>
                         <button id="horae-btn-export" class="horae-data-btn">
                             <i class="fa-solid fa-file-export"></i>
-                            <span>导出</span>
+                            <span data-i18n="common.export">导出</span>
                         </button>
                         <button id="horae-btn-import" class="horae-data-btn">
                             <i class="fa-solid fa-file-import"></i>
-                            <span>导入</span>
+                            <span data-i18n="common.import">导入</span>
                         </button>
-                        <button id="horae-btn-undo-ai-scan" class="horae-data-btn danger" title="清除AI智能摘要生成的所有事件和物品数据">
+                        <button id="horae-btn-undo-ai-scan" class="horae-data-btn danger" data-i18n-title="tooltip.undoScan" title="">
                             <i class="fa-solid fa-rotate-left"></i>
-                            <span>撤销摘要</span>
+                            <span data-i18n="settings.undoSummary">撤销摘要</span>
                         </button>
                         <button id="horae-btn-clear" class="horae-data-btn danger">
                             <i class="fa-solid fa-trash-can"></i>
-                            <span>清除</span>
+                            <span data-i18n="common.clear">清除</span>
                         </button>
                     </div>
                 </div>
                 
                 <div id="horae-btn-restart-tutorial" class="horae-tutorial-restart-section">
                     <i class="fa-solid fa-graduation-cap"></i>
-                    <span>重新开始新手教学</span>
+                    <span data-i18n="settings.restartTutorial">重新开始新手教学</span>
                 </div>
                 
                 <div class="horae-about">
-                    <p>Horae v1.10.2 | 作者: SenriYuki</p>
+                    <p>Horae v1.11.0 | 作者: SenriYuki</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>

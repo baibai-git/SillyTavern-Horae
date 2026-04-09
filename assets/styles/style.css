@@ -7,7 +7,6 @@
 #horae_drawer,
 .horae-message-panel,
 .horae-modal,
-.horae-modal-overlay,
 .horae-context-menu,
 .horae-progress-overlay {
     --horae-primary: #7c3aed;
@@ -34,7 +33,6 @@
 /* 非#horae_drawer的容器直接应用主题色 */
 .horae-message-panel,
 .horae-modal,
-.horae-modal-overlay,
 .horae-context-menu,
 .horae-progress-overlay {
     color: var(--horae-text);
@@ -50,9 +48,6 @@
 .horae-modal input:not([type="checkbox"]):not([type="radio"]),
 .horae-modal textarea,
 .horae-modal select,
-.horae-modal-overlay input:not([type="checkbox"]):not([type="radio"]),
-.horae-modal-overlay textarea,
-.horae-modal-overlay select,
 .horae-tutorial-card input:not([type="checkbox"]):not([type="radio"]),
 .horae-tutorial-card textarea,
 .horae-tutorial-card select {
@@ -83,8 +78,7 @@
 /* Checkbox隔离 */
 #horae_drawer input[type="checkbox"],
 .horae-message-panel input[type="checkbox"],
-.horae-modal input[type="checkbox"],
-.horae-modal-overlay input[type="checkbox"] {
+.horae-modal input[type="checkbox"] {
     -webkit-appearance: none !important;
     appearance: none !important;
     background: white !important;
@@ -109,16 +103,14 @@
 
 #horae_drawer input[type="checkbox"]:checked,
 .horae-message-panel input[type="checkbox"]:checked,
-.horae-modal input[type="checkbox"]:checked,
-.horae-modal-overlay input[type="checkbox"]:checked {
+.horae-modal input[type="checkbox"]:checked {
     background: white !important;
     border-color: #555 !important;
 }
 
 #horae_drawer input[type="checkbox"]:checked::after,
 .horae-message-panel input[type="checkbox"]:checked::after,
-.horae-modal input[type="checkbox"]:checked::after,
-.horae-modal-overlay input[type="checkbox"]:checked::after {
+.horae-modal input[type="checkbox"]:checked::after {
     content: '✓' !important;
     display: block !important;
     text-align: center !important;
@@ -136,8 +128,7 @@
 
 #horae_drawer label,
 .horae-message-panel label,
-.horae-modal label,
-.horae-modal-overlay label {
+.horae-modal label {
     color: var(--horae-text-muted) !important;
 }
 
@@ -2378,8 +2369,7 @@
 }
 
 /* === 模态弹窗 === */
-.horae-modal,
-.horae-modal-overlay {
+.horae-modal {
     position: fixed;
     top: 0;
     left: 0;
@@ -2776,8 +2766,7 @@
 
 /* === 移动端弹窗 === */
 @media screen and (max-width: 768px) {
-    .horae-modal,
-    .horae-modal-overlay {
+    .horae-modal {
         padding: 16px;
         box-sizing: border-box;
     }
@@ -2809,10 +2798,7 @@
     /* iOS缩放修复 */
     .horae-modal input,
     .horae-modal textarea,
-    .horae-modal select,
-    .horae-modal-overlay input,
-    .horae-modal-overlay textarea,
-    .horae-modal-overlay select {
+    .horae-modal select {
         font-size: 16px;
     }
 }

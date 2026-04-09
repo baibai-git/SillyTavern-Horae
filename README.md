@@ -1,275 +1,99 @@
-# Horae - 时光记忆 v1.10.2 | SillyTavern 记忆增强插件
+# Horae v1.11.0 - Memory Engine for SillyTavern
+
+**English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
 ![Image](https://github.com/SenriYuki/SillyTavern-Horae/blob/main/HoraeLogo.jpg)
 
-> *Horae（荷赖）— 希腊神话中掌管时序的女神*
+> *Horae — Greek goddesses who governed the orderly progression of time*
 
-长篇 RP 玩家的老毛病你一定遇到过 —— AI 的记忆约等于金鱼：昨天的事说成今天早上，连几天前发生的事都永远说是昨天；上一幕穿校服下一幕突然便服；NPC关系倒置；送出去的礼物凭空消失，丢掉的东西又回到手里。
+Long-form RP players know the pain: AI memory is basically a goldfish. Yesterday's events become "this morning," costumes change between paragraphs, NPC relationships flip, gifted items vanish, and discarded ones reappear.
 
-**Horae 用结构化的时间锚点，给你的 AI 装上一本靠谱的记忆账本。**
-
----
-
-## 亮点功能
-
-**RPG 模式 —— 血条、技能、声望、装备、等级、货币一目了然**
-为西幻 / 修真 / 战斗向角色卡量身打造的全模块化 RPG 系统。各子系统（属性条、多维属性、技能、声望、装备、等级、货币）均为**独立可选开关**，按需组合。角色卡内信息采用**标签分页**展示（属性/技能/装备/声望/等级/货币），仅显示已开启的模块，节约空间。**声望系统**支持自定义势力分类和数值范围。**装备系统**支持自定义格位与属性值追踪。**等级系统**追踪角色等级和经验值，经验条进度可视化。**货币系统**支持自定义币种和兑换比率（如 1000铜=10银=1金），AI 可通过增量或绝对值修改。所有配置均可导出/导入 JSON。关闭时不注入提示词、不消耗 Token。
-
-**向量记忆引擎 —— 找回被折叠的细节（新）**
-专为搭配「自动摘要&隐藏」设计的智能外脑！几十万字长篇压缩后细节全丢？现在当对话触及历史事件时，插件会自动从被隐藏的旧时间线中精准召回相关片段。全程依托 Web Worker 纯本地运算，零 API 消耗，丝滑不卡顿界面（首次运行需下载 30-60MB 模型缓存，提供中文优化的 bge 和多语言 e5 双模型可选⚠ 2GB 以下手机或云酒馆建议別用）。
-
-**新手导航 —— 第一次用也不迷路（新）**
-首次使用 Horae 的用户会自动触发交互式导览，逐步介绍各功能区域和设置项。从基本概念到进阶功能（上下文深度、注入位置、自定义提示词等）一次讲清。老用户可在设置中随时「重新开始教学」。
-
-**自助美化工具 —— 不会写 CSS 也能自定义（新）**
-为不会写代码的用户设计的可视化美化面板。用色相条、饱和度/亮度滑杆快速调色，日夜模式一键切换，还能导入图片 URL 装饰抽屉头部、背景和底部消息栏。所有修改实时预览，满意后保存即可导出分享。当然，也保留了主题 JSON 导入/导出和手写 CSS 给进阶用户。（⚠️做 Horae 插件的美化不用跟我要授权，请随意。）
-
-**场景记忆 —— 酒馆不再一夜变样（新）**
-AI 描写同一个地点，上一回有壁炉这一回没了？场景记忆会记录地点的固定物理特征，下次进入同一场景时自动注入。智能匹配地名（「酒馆·大厅」自动回退到「酒馆」），只发送匹配到的那一条描述，未命中时零注入。
-
-**情绪 & 关系网络 —— AI 读懂人际场（新）**
-情绪追踪让 AI 记住角色当前的心理状态，不再前一秒哭后一秒笑。关系网络记录人物之间的关系类型和变化，再也不会把敌人写成朋友。两者都是变化驱动，没变化时零输出。
-
-**自动摘要 —— 长篇自动省 Token**
-聊了几百楼还在全量发送？自动摘要在后台自动压缩旧消息为一段摘要，原始楼层 `/hide` 省 Token。摘要和原始时间线可随时一键切换，所见即所发。还能配一个低成本的**独立 API** 做真并行，摘要生成完全不占主连接。
-
-**向量记忆 —— 让 AI 回想起被隐藏的细节（新）**
-搭配自动摘要使用的智能回忆系统。摘要压缩后的旧消息细节不会丢失——当对话涉及历史事件时，插件会自动从被隐藏的时间线中精准召回相关片段注入上下文。全程**本地运算**，不消耗额外 API。支持中文优化和多语言两种模型选择。
-
-**AI 智能摘要**
-旧档案没用过 Horae？一键批量扫描全部历史消息，AI 自动提取剧情事件和物品变化，生成完整的时间线。支持自定义每批 Token 上限适配不同模型，不满意可一键撤销。
-
-**告别"永远的昨天"**
-插件自动计算相对时间，注入"昨天"、"上周三"、"上个月15号"这样的生活化表述。AI 终于能分清前天和上周了。支持现代、历史、奇幻架空等多种日历体系。
-
-**衣服不再乱穿**
-每位角色的当前穿着被锁定记录，且只发送在场角色的服装。角色不会再莫名其妙换昨天的衣服，也不会把不在场的人的衣服发给 AI 浪费 token。
-
-**NPC 不会越写越糊**
-外貌、性格、关系等字段独立追踪。年龄还会随剧情时间自动推进。严格订立了关系的 prompt，不再上一秒 Char 欠 User 钱，下一秒 AI 输出说是 User 欠 Char 钱来颠倒关系。
-
-**物品栏终于靠谱了**
-带唯一编号的物品系统，分一般/重要/关键三级。智能解析数量变化（5斤→4斤），自动检测"已消耗"等状态并移除。
-
-**待办事项防遗忘**
-AI 可以自动记录剧情中的约定和伏笔，完成后自动删除。再也不用担心 AI 忘记两周前约好的约会。
-
-**宝宝辅食级自定义表格**
-Excel 风格的自由表格，想加行加行想加列加列，配上填写提示词让 AI 自动填。课程表、角色关系、任务清单……你能想到的都能做。删除消息时 AI 填的内容自动回退，你自己填的始终保留。
-
-**变化驱动，省 Token**
-AI 只输出本回合变化的信息，不再每次重复整个状态。每种数据都有明确的触发规则，减少无效输出。**不用额外耗费生成次数** —— 插件在 AI 正常回复时自动解析记忆节点，零额外开销。
-
-**截断/改写也不怕**
-中途被截断或自己手动改写了部分剧情？底部栏内置 **AI 分析**功能，只需一次生成就能智能补全该条消息的记忆节点。
-
-**界面简单，萌新友好**
-底部栏一目了然，顶部面板分页清晰。无需复杂配置，安装即用。
-
-**发送内容自由控制**
-在设置中自由选择哪些数据发送给 AI、哪些不发送 —— 不需要角色追踪？关掉。不需要物品栏？关掉。按需组合，节省 token。
+**Horae gives your AI a reliable memory ledger using structured time anchors.**
 
 ---
 
-## 快速安装
+## Features
 
-1. 打开 SillyTavern → 顶部扩展面板（积木图标）→ 「安装扩展」
-2. 粘贴本仓库的 Git 链接，点击安装
-3. 安装完成后刷新页面即可使用
+### Core Memory System
+- **Timeline Tracking** — Events are timestamped with relative time calculations ("yesterday", "last Wednesday", "2 months ago"). AI finally knows the difference.
+- **Costume Lock** — Each character's current outfit is recorded and only sent for present characters. No more phantom wardrobe changes.
+- **NPC Tracking** — Appearance, personality, relationships tracked independently. Ages advance with story time. Relationship prompts are strictly enforced.
+- **Item Inventory** — Unique ID system with Normal / Important / Critical tiers. Smart quantity parsing, auto-detection of consumed items.
+- **Agenda** — AI automatically records plot promises and deadlines. Completed items are auto-removed.
+- **Mood & Relationships** — Emotion tracking keeps characters consistent. Relationship network records bonds between characters. Both are change-driven: zero output when nothing changes.
+- **Scene Memory** — Records fixed physical features of locations for consistent descriptions across visits.
 
-> 配套正则会在插件首次加载时**自动注入**，无需手动导入。
+### RPG System (Modular)
+- **Status Bars** — HP/MP/SP with custom names, colors. Dozens of status effect icons.
+- **Attribute Panel** — Multi-dimensional stats (STR/DEX/CON/INT/WIS/CHA) with radar chart.
+- **Skills** — Track skill ownership, levels, and descriptions.
+- **Equipment** — Per-character slot configs with 6 racial templates (Human, Orc, Centaur, Lamia, Winged, Demon). Custom templates supported.
+- **Reputation** — Custom faction categories with sub-dimensions.
+- **Level / XP** — Experience formula with visual progress bars.
+- **Currency** — Custom denominations with emoji icons and exchange rates.
+- **Strongholds** — Tree-structured base/territory management.
+- All modules are **independently toggleable**. Disabled = zero token cost.
 
+### Smart Token Management
+- **Auto Summary & Hide** — Automatically compresses old messages into AI-generated summaries. Original messages are `/hide`d to save tokens. Summaries can be toggled back to original events anytime.
+- **Vector Memory** — Semantic search engine that recalls hidden details when conversation touches historical events. Runs locally via Web Worker — zero API cost.
+- **AI Batch Scan** — One-click retroactive analysis of entire chat history.
+- **Change-Driven Output** — AI only outputs what changed this turn. No redundant state dumps.
 
-
----
-
-## v1.1.0 更新内容
-
-- **AI 智能摘要**：批量分析历史消息，自动提取剧情事件和物品，支持自定义 Token 分批上限，可一键撤销
-- **Token计数器**：显示发送给AI的总prompt量，位置在设置下方。附带一提，目前插件果奔时发送prompt 3,591 Token
-- **swipe适配**：修复了右滑生成新分页时，旧分页的记忆数据会被带入新生成的问题。现在swipe生成时会自动排除当前分页的旧记忆，确保AI基于正确的上下文生成全新的剧情分支
-- **美化兼容**：插件 UI 样式与外部美化主题隔离，不再出现黑底黑字或白底白字
-- **正则修改**：把<horaeevent>也设置为不发送给AI，更省Token
-- **描述修正**：把某些功能的描述更正为更准确的描述方式
-
----
-
-## v1.2.0 更新内容
-
-- **自定义提示词**：设置中新增提示词编辑器，可自由修改系统注入提示词和 AI 摘要提示词，支持 `{{user}}`/`{{char}}` 变量，可以一键恢复默认，方便微调
-- **AI 摘要功能新增**：现在可以中断生成了，并配置了弹窗新增「NPC 角色信息」和「好感度」勾选项。默认关闭，按需开启
-- **摘要审阅弹窗**：AI 智能摘要完成后弹出审阅视窗，按「剧情轨迹 / 物品 / 角色 / 好感度」分类展示结果。逐条删除不满意的内容，点「补充摘要」只对删除项重跑 AI
-- **好感度显示开关**：好感度区域新增小眼睛按钮，可点击隐藏/显示角色好感度
-- **好感度删除**：编辑好感度弹窗新增删除键，可以自行删除AI生成错误产生错误的项目
-- **美化兼容**：强调了CHECKBOX内部的字色，不再出现白底白勾
-
----
-
-## v1.3.0 更新内容
-
-- **全局表格**：自定义表格新增「全局」和「本地」两种作用域。全局表格跨角色卡共享，适合记录固定数据（如角色 ID 表）。点击表格名称前的图标可切换
-- **行列锁定**：右键/长按表格单元格可锁定行、列或单个格子，防止 AI 修改。锁定内容在 prompt 中标记 🔒，AI 会跳过写入
-- **一键清空表格**：表格操作栏新增橡皮擦按钮，清除所有数据区内容但保留表头，方便让 AI 重新填表
-- **主题系统**：内置「樱花粉」「森林绿」「海洋蓝」三套预设主题，下拉即用。支持导入/导出自定义美化 JSON 文件，方便社区共享主题
-- **美化导航**：新增 `THEME.md` 文档，列出全部 CSS 变量、主要容器类名和美化文件格式，方便用户自制主题
-- **日夜模式**：设置中可切换日间/夜间模式，仅影响插件界面
-- **自定义 CSS**：设置中可输入额外 CSS 代码微调插件样式
-- **右键菜单修复**：修复右键菜单透明的问题（CSS 变量作用域未覆盖 `document.body` 级元素）
-- **样式隔离增强**：所有按钮替换为插件专属类名，顶栏图标不再受浅色模式影响
-- **消息面板宽度**：设置中可自定义消息面板宽度（50-100%）
-- **正则置底**：插件正则启动时自动移至列表末尾，减少与其他正则冲突
-- **时间线多选**：时间线事件支持长按多选批量删除（避免误触做了较长的触发时间）
+### User Experience
+- **Custom Tables** — Excel-style tables with AI auto-fill, row/column locking, undo/redo.
+- **Theme Designer** — Visual theme editor with hue/saturation sliders, image decorations, day/night modes. Export & share themes as JSON.
+- **Interactive Tutorial** — First-time users get a guided walkthrough of all features.
+- **Custom Prompts** — Full control over system injection, batch scan, compression, and RPG prompts. Preset save/load system.
+- **Config Profiles** — Export all settings as a JSON file. Card authors can share configs for one-click setup.
 
 ---
 
-## v1.4.0 更新内容
+## Installation
 
-- **好感度小数点支持**：好感度数值全面支持小数，兼容世界书等以小数步进的好感度系统
-- **顶部图标开关**：设置中新增「显示顶部导航栏图标」开关。可通过扩展面板（积木图标）中的「Horae 时光记忆」栏位重新开启
-- **时间线插入功能**：长按时间线事件弹出操作菜单，支持在上方/下方添加事件或插入摘要页。摘要页用于替代被删除的中间时间线，节省 Token 的同时保留关键信息
-- **时间线多选改进**：多选模式改为点击顶部按钮切换（原长按触发已改为插入菜单）
-- **摘要页**：新增「摘要」事件类型，无时间戳显示，空白状态提示用户"请勿删除开头时间线"
-- **表格填写提示词自定义**：自定义提示词区新增「表格填写规则提示词」编辑器，可自由修改 AI 填表规则，支持一键恢复默认
-- **表格 AI 理解增强**：发送给 AI 的表格数据现带有坐标标注（如 `[1,2]内容`）和尺寸声明，大幅减少 AI 填错位的问题
-- **表格数据清理修复**：删除表格或一键清空时，同步清除所有消息中的 AI 历史填写记录（tableContributions）和基线快照（baseData），彻底杜绝旧数据回流
+1. Open SillyTavern → Extensions panel (puzzle icon) → **Install Extension**
+2. Paste this repository's Git URL and click Install
+3. Refresh the page — done!
+
+> The companion regex is **auto-injected** on first load. No manual import needed.
 
 ---
 
-## v1.5.0 更新内容
+## Compatibility
 
-本次更新围绕 RP「精细度」与「长篇省 Token」展开。
-
-### 新增功能
-
-- **情绪/心理状态追踪**：追踪在场角色的情绪变化（如「紧张/不安」「开心/期待」）。底部栏自动显示当前角色的情绪标签。**Token 消耗极低**——AI 仅在情绪发生明显变化时才输出 `mood:` 标签（通常 10-20 token），无变化时零输出。设置中可开关
-- **关系网络**：记录角色之间的关系（朋友、恋人、上下级、宿敌等）。NPC 页面底部显示关系列表，支持手动编辑。底部栏的关系展示**完全由插件从数据库读取渲染，不消耗 AI 输出 Token**。AI 端采用变化驱动：仅在关系变化时输出 `rel:` 标签，已有关系无变化时零输出。设置中可开关
-- **场景记忆**：记录地点的固定物理特征，保持跨回合场景描写一致。**智能检索**——插件根据当前地点名匹配已记录的场景描述，仅发送匹配到的那一条（通常 50-150 字），而非把所有地点记忆全部发送。未匹配到任何地点时零注入。支持复合地名回退匹配（如「酒馆·大厅」→「酒馆」）
-- **自动摘要 & 隐藏**：设置中开启后，当未压缩消息数超过阈值时自动触发全文摘要。摘要完成后原始消息楼层被 `/hide` 省 Token，时间线中出现摘要卡片。可随时点击按钮在「摘要视图」和「原始时间线」之间切换，所见即所发
-- **独立 API（真并行）**：自动摘要可配置独立的 OpenAI 兼容端点（填入 API 地址 / 密钥 / 模型名称即可）。摘要生成通过直接 HTTP 请求，完全不占用酒馆主连接，实现与 AI 回复的真并行。支持 OpenAI、DeepSeek、OpenRouter 等所有兼容端点
-- **剧情压缩取消按钮**：事件压缩和全文摘要均新增取消按钮，点击后立即中断后端 API 请求（与 AI 智能摘要的取消按钮一致）
-- **表格分支继承**：开分支或回退消息时，表格数据只继承到该节点为止的 AI 填写和用户手动编辑。例如在 #10 开分支，只继承 #10 之前的表格数据，不会带入后续填写
-
-### 改进
-
-- **全局表格数据按卡分离**：全局表格的结构（表头、名称、提示词、锁定）跨角色卡共享，但填写数据按角色卡独立存储。切换卡片不再继承其他卡的表格数据
-- **智能记忆压缩**：在时间线多选模式下可将多条事件交给 AI 压缩合并为一条摘要，支持摘要视图与原始时间线双向切换
-- 系统提示词编辑器中的默认文本会根据当前启用的功能动态更新（如启用关系网络后 `<horae>` 标签格式区自动出现 `rel:` 行）
-
-### UI / UX
-
-- 修复 `--horae-surface` 未定义变量，改用 `--horae-bg-secondary`。**已有的自定义美化不受影响**
-- THEME.md 补充了新增选择器文档
-
-### ⚠️ 升级提醒
-
-如果你之前**自定义过系统注入提示词**，升级到 v1.5.0 后请进入设置 → 自定义提示词，点击各栏位旁的 **🔄 重置** 按钮恢复为最新默认值。因为新增的场景记忆、情绪追踪、关系网络功能需要在提示词中声明对应的标签格式（`scene_desc:`、`mood:`、`rel:`），旧的自定义提示词中缺少这些声明会导致 AI 不输出新标签。
-
-如果你没有自定义过提示词（使用默认值），则无需操作，插件会自动使用最新的默认提示词。
+- **SillyTavern**: 1.12.6+ (AI analysis requires 1.13.5+)
+- **Platforms**: Desktop + Mobile
 
 ---
 
-## v1.6.0 更新内容
+## Language Support
 
-- **自助美化工具**：为不会写 CSS 的用户设计的可视化美化面板。提供色相条、饱和度/亮度/日夜模式滑杆、强调色选取和快速色板预览。支持导入图片 URL 装饰抽屉头部、抽屉背景和底部消息栏，可调节可见度。支持独立设置抽屉背景底色。所有修改实时预览，满意后一键保存为自定义主题，可填写名称和作者后导出 JSON 分享
-- **新手导航**：首次使用 Horae 的全新用户会自动触发交互式教学，逐步高亮介绍各功能面板和设置项（上下文深度、注入位置、自动摘要、自定义提示词、自定义表格等），引导新用户快速上手。老用户可在设置中点击「重新开始教学」随时回顾
-- **副 API 破限注入**：自动摘要的独立 API 请求现在会自动注入 SillyTavern 的 jailbreak 提示词和 `max_tokens` 参数，减少因内容审查导致的空回复
+| Language | Status |
+|----------|--------|
+| 简体中文 (Simplified Chinese) | ✅ Full |
+| 繁體中文 (Traditional Chinese) | ✅ Full |
+| English | ✅ Full |
+| 한국어 (Korean) | 🔧 Template (community contributions welcome) |
+| 日本語 (Japanese) | 🔧 Template (community contributions welcome) |
 
-### ⚠️ 升级提醒
-
-如果你之前**自定义过系统注入提示词**，升级到 v1.6.0 后请进入设置 → 自定义提示词，点击 **🔄 重置** 按钮恢复为最新默认值。本版本对角色、好感度等字段的强制填写要求做了显著强化，旧的自定义提示词可能缺少这些强调标记。
-
-如果你没有自定义过提示词（使用默认值），则无需操作。
-
----
-
-## v1.7.0 更新内容
-
-本次更新新增向量记忆系统，让自动摘要的用户不再因压缩而丢失细节。
-
-### 新增功能
-
-- **向量记忆 (Beta)**：基于本地 AI 模型的智能回忆系统，专为搭配「自动摘要 & 隐藏」设计。当对话中涉及历史事件时，插件会自动从被隐藏的旧消息中精准召回相关时间线片段，注入上下文供 AI 参考
-  - **全程本地运算**：使用浏览器内置 Web Worker 运行轻量 AI 模型，不消耗额外 API 额度。首次使用需下载约 30-60MB 的模型文件（之后会缓存在浏览器中）
-  - **双模型可选**：`bge-small-zh-v1.5`（中文优化）和 `multilingual-e5-small`（多语言支持），可按需选择
-  - **智能检索**：结合意图识别、结构化查询和语义搜索三层检索策略。例如「提及和角色初次见面」会直接查找该角色首次出现的消息，无需依赖模糊匹配
-  - **上下文关联**：命中消息的前后相邻事件也会被自动带入，还原完整的事件脉络
-  - **全文回顾**：高置信度的召回结果可发送原始正文（自动过滤思维链），让 AI 获得完整的叙事细节而非仅时间线摘要。条数和阈值均可自定义，设为 0 可关闭
-  - **摘要隔离**：自动排除摘要内容，只使用原始时间线数据参与检索，避免摘要重复注入
+**Want Horae in your language?** Open an [Issue](https://github.com/SenriYuki/SillyTavern-Horae/issues) or submit a PR with a translation file! See `locales/en.json` for the translation template.
 
 ---
 
-## v1.8.0 更新内容
+## What's New in v1.11.0
 
-- **RPG 模式**：开启后 AI 通过 `<horaerpg>` 标签输出角色属性和技能变化，与现有 `<horae>` 标签互不干扰
-  - **自定义属性条**：默认 HP/MP/SP 三条，用户可自由增删、修改显示名称和颜色（如改 MP 为「灵力」、新增「精力值」「慾望值」等）
-  - **状态异常追踪**：支持昏眩、流血、冰冻、灼烧、石化等数十种状态关键词，自动匹配差异化图标显示
-  - **技能系统**：记录技能归属、等级和效果描述，技能与 NPC 角色通过编号联动，支持手动添加和 AI 自动生成
-  - **底部 HUD 状态栏**：消息面板上方渲染在场角色的简易状态条，显示属性条和异常状态图标，自动跟随底部栏的宽度和偏移设置
-  - **RPG 分页**：顶部面板新增 RPG 标签页，展示属性条配置、各角色详细属性和状态列表、技能列表
-  - **条件注入**：关闭 RPG 模式时不注入任何提示词，零 Token 消耗；发送属性条和技能列表可独立开关
-- **RPG 面板美化**：自助美化工具新增「RPG 状态栏」区域，支持设置背景色和透明度。RPG HUD 纳入主题系统，跟随日夜模式和自定义主题变量
+### Internationalization (i18n)
+- **UI Language Selector** — Switch between Simplified Chinese, Traditional Chinese, English, Korean, and Japanese. Auto-detect option available.
+- **AI Output Language** — Separate setting for AI response language, independent of UI language.
+- **900+ translated keys** — All UI text, prompts, tooltips, and tutorials are fully translated.
+- **Simplified/Traditional Chinese bidirectional parsing** — No more search/parse failures due to character variant differences.
 
-### ⚠️ 升级提醒
-
-如果你之前**自定义过系统注入提示词**，升级到 v1.8.0 后请进入设置 → 自定义提示词，点击 **🔄 重置** 按钮恢复为最新默认值。RPG 模式需要新增的提示词声明才能正常工作。
-
-如果你没有自定义过提示词（使用默认值），则无需操作。
+See [CHANGELOG](CHANGELOG.md) for full version history.
 
 ---
 
-## v1.9.0 更新内容
+Bug reports and suggestions are welcome!
 
-### 自动摘要 & 副 API
+> ⚠️ This is a side project — replies may be delayed. Thank you for your patience.
 
-- **副 API 多轮结构改造**：重构摘要请求的消息结构，采用 system/assistant/user 多轮交替格式，内嵌 assistant 确认回复和预填充（prefill），大幅提升 NSFW 内容的摘要通过率。同时自动注入酒馆预设中的主提示词、NSFW 允许提示词和破限提示词
-- **模型下拉选单**：副 API、Embedding、Rerank 三处模型设置均从文本输入改为下拉选单。填好 API 地址和密钥后，点击刷新按钮即可拉取可用模型列表，无需手动输入模型名
-- **自动摘要警告优化**：不再因部分楼层缺少时间戳就完全阻止摘要。改为详细显示哪些楼层缺少时间戳或时间线事件（如 `缺时间戳: #5, #8, #12`），仅在超过 50% 缺失时弹出警告提醒，但不阻止摘要执行
-
-### 向量记忆
-
-- **全文剔除标签**：向量设置中新增「全文剔除标签」输入框。用户可填入自定义标签名（如 `snow, theater`），全文回顾和 Rerank 全文精排时会将这些标签包裹的内容整段移除，避免小剧场/旁白等非剧情内容被 AI 召回
-- **番外消息隔离**：标记为「番外」（`_skipHorae`）的消息不再被向量索引和召回，确保小剧场模式的内容不会污染正式剧情的记忆检索
-
----
-
-## v1.10.0 更新内容
-
-本次大版本更新全面重构 RPG 系统，新增 6 个 RPG 子模块、据点经营系统、装备多种族模板等功能。
-
-### RPG 模式
-
-- **子模块独立开关**：装备栏、声望、等级、货币、据点各为独立 checkbox，按需组合。关闭时零 Token 消耗
-- **角色卡标签分页**：角色详情区改为分页标签（属性/技能/装备/声望/货币），仅显示已开启的模块
-- **只显示在场角色**：顶部角色卡和底部 HUD 根据 `characters_present` 过滤，离场角色数据保留但不显示
-
-### 新增功能
-
-- **等级/经验值系统**：AI 通过 `level:` / `xp:` 标签输出等级变化。经验值公式：升级所需 = 等级 × 100，等级差 ≥10 的低级挑战仅得 1 点经验。手动编辑等级时自动计算所需经验，无需手动输入
-- **货币系统**：自定义币种和兑换比率。每个币种可设置 emoji 图标（如 🪙💎），在 HUD 和角色卡中显示。AI 通过 `currency:归属|币名=±增量` 修改，仅接受已注册币种。配置可导出/导入
-- **声望系统**：自定义势力声望分类和数值范围，支持细项（子维度）。删除防复活，导出/导入 JSON
-- **装备栏系统**：按角色独立的格位配置与属性值追踪
-  - **按角色独立格位**：每个角色拥有独立的装备格位配置（莉莉丝用人类模板、雷格用兽人模板），互不干扰
-  - **多种族模板**：内置人类、兽人（含尾部）、有翼族（含翅膀）、马人（马甲/马蹄铁）、拉弥亚（无腿部/足部）、恶魔（含角饰/翅膀/尾部）六种预设模板
-  - **自存模板**：可将角色当前格位配置保存为新模板，随时加载/删除
-  - **灵活配置**：加载模板后仍可为单个角色增删格位，不影响其他角色
-  - **穿卸追踪**：AI 通过 `equip:` / `unequip:` 标签记录变化，插件按角色格位检查有效性和数量上限
-  - **手动管理**：支持手动添加装备（选择格位、输入名称和属性）和卸下装备
-  - **导出/导入**：装备格位配置可导出 JSON 分享
-- **据点/基地系统**（新）：类似场景记忆的多层级树形结构，用于管理角色的据点、领地、设施
-  - **树形层级**：支持无限嵌套子节点（如 庄园 > 锻造区 > 锻造炉）
-  - **等级追踪**：每个节点可设置等级
-  - **AI 联动**：AI 通过 `base:路径=等级` 或 `base:路径|desc=描述` 自动更新据点信息，路径用 `>` 分隔层级
-  - **手动管理**：可手动添加/编辑/删除节点，支持导出/导入
-
----
-
-## 兼容性
-
-- **SillyTavern**: 1.12.6+（AI分析功能需求1.13.5+）
-- **平台**: 电脑端 + 移动端双端适配
-
----
-
-有 bug 或建议欢迎反馈！
-
-**作者：SenriYuki**
+**Author: SenriYuki**
