@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.11.1
+ * 版本: 1.11.2
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -21,10 +21,26 @@ import { t, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLan
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.11.1';
+const VERSION = '1.11.2';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
+    {
+        id: 'horae_think_sanitize',
+        scriptName: 'Horae - 思维链标签安全化',
+        description: '将思维链内的<horae>等标签转为全角括号，防止DOM解析冲突',
+        findRegex: '/<(\\/?horae(?:event|rpg|table[^>]*)?)>(?=[\\s\\S]*?<\\/think(?:ing)?>)/gi',
+        replaceString: '‹$1›',
+        trimStrings: [],
+        placement: [2],
+        disabled: false,
+        markdownOnly: true,
+        promptOnly: false,
+        runOnEdit: true,
+        substituteRegex: 0,
+        minDepth: null,
+        maxDepth: null,
+    },
     {
         id: 'horae_hide',
         scriptName: 'Horae - 隐藏状态标签',
@@ -14130,22 +14146,37 @@ async function onChatChanged() {
 
 /** 消息渲染时触发 */
 function onMessageRendered(messageId) {
-    if (!settings.enabled || !settings.showMessagePanel) return;
+    if (!settings.enabled) return;
     
     setTimeout(() => {
         try {
             const messageEl = document.querySelector(`.mes[mesid="${messageId}"]`);
-            if (messageEl) {
-                const msg = horaeManager.getChat()[messageId];
-                if (msg && !msg.is_user) {
-                    addMessagePanel(messageEl, messageId);
-                    messageEl.classList.add('horae-processed');
-                }
+            if (!messageEl) return;
+            _sanitizeLeakedHoraeTags(messageEl);
+            const msg = horaeManager.getChat()[messageId];
+            if (msg && !msg.is_user && settings.showMessagePanel) {
+                addMessagePanel(messageEl, messageId);
+                messageEl.classList.add('horae-processed');
             }
         } catch (err) {
             console.error(`[Horae] onMessageRendered #${messageId} 失败:`, err);
         }
     }, 100);
+}
+
+/** 清理渲染后 DOM 中泄露的 horae 标签（万能兜底，不依赖思维链标签名） */
+function _sanitizeLeakedHoraeTags(messageEl) {
+    const mesBody = messageEl.querySelector('.mes_text');
+    if (!mesBody) return;
+    const walker = document.createTreeWalker(mesBody, NodeFilter.SHOW_TEXT, null, false);
+    const horaePat = /<\/?horae(?:event|rpg|table[:\uff1a]?[^>]*)?>/gi;
+    let node;
+    while ((node = walker.nextNode())) {
+        if (horaePat.test(node.textContent)) {
+            horaePat.lastIndex = 0;
+            node.textContent = node.textContent.replace(horaePat, '');
+        }
+    }
 }
 
 /** swipe切换分页时触发 — 重置meta、重新解析并刷新所有显示 */
