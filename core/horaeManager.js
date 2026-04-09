@@ -1188,13 +1188,17 @@ class HoraeManager {
     /** 解析AI回复中的horae标签 */
     parseHoraeTag(message) {
         if (!message) return null;
+
+        // 剥离 <think>/<thinking> 块，防止思维链内的 horae 标签污染解析
+        message = message.replace(/<think(?:ing)?[\s>][\s\S]*?<\/think(?:ing)?>/gi, '');
         
-        // 提取所有 <horae> 块并选择包含有效字段的块（防止其他插件生成的同名标签干扰）
+        // 提取所有 <horae> 块；多块时优先选最靠后的有效块（正文末尾的才是真正输出）
         let match = null;
         const allHoraeMatches = [...message.matchAll(/<horae>([\s\S]*?)<\/horae>/gi)];
         const horaeFieldPattern = /^(time|timestamp|location|atmosphere|scene_desc|characters|costume|item[!]*|item-|event|affection|npc|agenda|agenda-|rel|mood):/m;
         if (allHoraeMatches.length > 1) {
-            match = allHoraeMatches.find(m => horaeFieldPattern.test(m[1])) || allHoraeMatches[0];
+            match = [...allHoraeMatches].reverse().find(m => horaeFieldPattern.test(m[1]))
+                 || allHoraeMatches[allHoraeMatches.length - 1];
         } else if (allHoraeMatches.length === 1) {
             match = allHoraeMatches[0];
         }
@@ -1204,7 +1208,7 @@ class HoraeManager {
         
         const allEventMatches = [...message.matchAll(/<horaeevent>([\s\S]*?)<\/horaeevent>/gi)];
         const eventMatch = allEventMatches.length > 1
-            ? (allEventMatches.find(m => /^event:/m.test(m[1])) || allEventMatches[0])
+            ? ([...allEventMatches].reverse().find(m => /^event:/m.test(m[1])) || allEventMatches[allEventMatches.length - 1])
             : allEventMatches[0] || null;
         const tableMatches = [...message.matchAll(/<horaetable[:：]\s*(.+?)>([\s\S]*?)<\/horaetable>/gi)];
         const rpgMatches = [...message.matchAll(/<horaerpg>([\s\S]*?)<\/horaerpg>/gi)];
