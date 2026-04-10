@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.11.4
+ * 版本: 1.11.5
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -21,7 +21,7 @@ import { t, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLan
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.11.4';
+const VERSION = '1.11.5';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -6850,7 +6850,7 @@ function _bindStrongholdEvents() {
             const lvRaw = modal.querySelector('#horae-sh-level').value;
             const level = lvRaw !== '' ? parseInt(lvRaw) : null;
             const desc = modal.querySelector('#horae-sh-desc').value.trim();
-            nodes.push({ id: _genShId(), name, level, desc, parent: null });
+            nodes.push({ id: _genShId(), name, level, desc, parent: null, _userAdded: true });
             _saveStrongholdData();
             renderStrongholdTree();
             _bindStrongholdEvents();
@@ -6873,7 +6873,7 @@ function _bindStrongholdEvents() {
                 const lvRaw = modal.querySelector('#horae-sh-level').value;
                 const level = lvRaw !== '' ? parseInt(lvRaw) : null;
                 const desc = modal.querySelector('#horae-sh-desc').value.trim();
-                nodes.push({ id: _genShId(), name, level, desc, parent: parentId });
+                nodes.push({ id: _genShId(), name, level, desc, parent: parentId, _userAdded: true });
                 _saveStrongholdData();
                 renderStrongholdTree();
                 _bindStrongholdEvents();
@@ -6888,7 +6888,7 @@ function _bindStrongholdEvents() {
         btn.onclick = () => { _openShEditDialog(btn.dataset.id); };
     });
 
-    // 删除（递归删除子节点）
+    // 删除（递归删除子节点 + 记录到 _deletedStrongholds 防回滚）
     container.querySelectorAll('.horae-rpg-sh-del').forEach(btn => {
         btn.onclick = () => {
             const nodes = _getStrongholdData();
@@ -6903,6 +6903,20 @@ function _bindStrongholdEvents() {
             const childDesc = desc > 0 ? t('ui.andChildNodes', {n: desc}) : '';
             const msg = t('confirm.deleteStronghold', {name: node.name, childDesc}) + (desc > 0 ? ' ' + t('confirm.deleteStrongholdUndo') : '');
             if (!confirm(msg)) return;
+            const chat = horaeManager.getChat();
+            const rpg = chat?.[0]?.horae_meta?.rpg;
+            if (rpg) {
+                if (!rpg._deletedStrongholds) rpg._deletedStrongholds = [];
+                function collectDeleted(pid) {
+                    const n = nodes.find(x => x.id === pid);
+                    if (n) {
+                        const parentNode = n.parent ? nodes.find(x => x.id === n.parent) : null;
+                        rpg._deletedStrongholds.push({ name: n.name, parent: parentNode?.name || null });
+                    }
+                    nodes.filter(x => x.parent === pid).forEach(k => collectDeleted(k.id));
+                }
+                collectDeleted(id);
+            }
             function removeRecursive(pid) {
                 const kids = nodes.filter(n => n.parent === pid);
                 for (const k of kids) removeRecursive(k.id);

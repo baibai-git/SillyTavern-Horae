@@ -963,9 +963,9 @@ class HoraeManager {
                 }
             }
 
-            // 据点（直接从 chat[0] 读取，据点不参与消息累积式快照）
+            // 据点（从快照读取，支持楼层倒回）
             if (!!this.settings?.sendRpgStronghold) {
-                const shNodes = this.getChat()?.[0]?.horae_meta?.rpg?.strongholds || [];
+                const shNodes = rpg.strongholds || [];
                 if (shNodes.length > 0) {
                     lines.push(`\n[${L('据点','Stronghold','拠点','거점','Опорный пункт')}]`);
                     function _shTreeStr(nodes, parentId, indent) {
@@ -2064,14 +2064,21 @@ class HoraeManager {
                 }
             }
         }
-        // 据点变更
+        // 据点变更（跳过用户已删除的节点，防回滚）
         if (changes.baseChanges?.length > 0) {
             if (!rpg.strongholds) rpg.strongholds = [];
+            const deletedSh = rpg._deletedStrongholds || [];
             for (const bc of changes.baseChanges) {
                 const pathParts = bc.path.split('>').map(s => s.trim()).filter(Boolean);
                 let parentId = null;
                 let targetNode = null;
+                let blocked = false;
                 for (const part of pathParts) {
+                    const parentName = parentId ? (rpg.strongholds.find(n => n.id === parentId)?.name || null) : null;
+                    if (deletedSh.some(d => d.name === part && (d.parent || null) === parentName)) {
+                        blocked = true;
+                        break;
+                    }
                     targetNode = rpg.strongholds.find(n => n.name === part && (n.parent || null) === parentId);
                     if (!targetNode) {
                         targetNode = { id: 'sh_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: part, level: null, desc: '', parent: parentId };
@@ -2079,10 +2086,9 @@ class HoraeManager {
                     }
                     parentId = targetNode.id;
                 }
-                if (targetNode) {
-                    if (bc.field === 'level') targetNode.level = typeof bc.value === 'number' ? bc.value : parseInt(bc.value);
-                    else if (bc.field === 'desc') targetNode.desc = String(bc.value);
-                }
+                if (blocked || !targetNode) continue;
+                if (bc.field === 'level') targetNode.level = typeof bc.value === 'number' ? bc.value : parseInt(bc.value);
+                else if (bc.field === 'desc') targetNode.desc = String(bc.value);
             }
         }
     }
@@ -2110,8 +2116,9 @@ class HoraeManager {
         const oldEquipConfig = old.equipmentConfig || { locked: false, perChar: {} };
         // 保留货币配置
         const oldCurrencyConfig = old.currencyConfig || { denominations: [] };
-        // 保留据点数据（用户手动添加 + AI 累积）
+        // 保留据点数据和删除记录（防回滚）
         const oldStrongholds = old.strongholds ? JSON.parse(JSON.stringify(old.strongholds)) : [];
+        const deletedStrongholds = old._deletedStrongholds ? JSON.parse(JSON.stringify(old._deletedStrongholds)) : [];
 
         first.horae_meta.rpg = {
             bars: {}, status: {}, skills: {}, attributes: { ...userAttrs }, _deletedSkills: deletedSkills,
@@ -2119,7 +2126,7 @@ class HoraeManager {
             equipmentConfig: oldEquipConfig, equipment: {},
             levels: {}, xp: {},
             currencyConfig: oldCurrencyConfig, currency: {},
-            strongholds: oldStrongholds,
+            strongholds: oldStrongholds, _deletedStrongholds: deletedStrongholds,
         };
         for (let i = 1; i < chat.length; i++) {
             const changes = chat[i]?.horae_meta?._rpgChanges;
@@ -2173,15 +2180,19 @@ class HoraeManager {
      */
     getRpgStateAt(skipLast = 0) {
         const chat = this.getChat();
-        if (!chat?.length) return { bars: {}, status: {}, skills: {}, attributes: {}, reputation: {}, equipment: {}, levels: {}, xp: {}, currency: {} };
+        if (!chat?.length) return { bars: {}, status: {}, skills: {}, attributes: {}, reputation: {}, equipment: {}, levels: {}, xp: {}, currency: {}, strongholds: [] };
         const end = Math.max(1, chat.length - skipLast);
         const first = chat[0];
         const rpgMeta = first?.horae_meta?.rpg || {};
+        // 据点：用户手动添加的（_userAdded）作为基线，AI 产生的从消息累积
+        const userStrongholds = (rpgMeta.strongholds || []).filter(n => n._userAdded);
+        const deletedSh = rpgMeta._deletedStrongholds || [];
         const snapshot = {
             bars: {}, status: {}, skills: {}, attributes: {}, reputation: {}, equipment: {},
             levels: JSON.parse(JSON.stringify(rpgMeta.levels || {})),
             xp: JSON.parse(JSON.stringify(rpgMeta.xp || {})),
             currency: JSON.parse(JSON.stringify(rpgMeta.currency || {})),
+            strongholds: JSON.parse(JSON.stringify(userStrongholds)),
         };
 
         // 用户手动编辑的数据
@@ -2288,6 +2299,28 @@ class HoraeManager {
                     snapshot.currency[owner][c.name] = (snapshot.currency[owner][c.name] || 0) + c.value;
                 } else {
                     snapshot.currency[owner][c.name] = c.value;
+                }
+            }
+            // 据点累积（与 _mergeRpgData 同逻辑，跳过已删除节点）
+            if (changes.baseChanges?.length > 0) {
+                for (const bc of changes.baseChanges) {
+                    const pathParts = bc.path.split('>').map(s => s.trim()).filter(Boolean);
+                    let parentId = null;
+                    let targetNode = null;
+                    let blocked = false;
+                    for (const part of pathParts) {
+                        const parentName = parentId ? (snapshot.strongholds.find(n => n.id === parentId)?.name || null) : null;
+                        if (deletedSh.some(d => d.name === part && (d.parent || null) === parentName)) { blocked = true; break; }
+                        targetNode = snapshot.strongholds.find(n => n.name === part && (n.parent || null) === parentId);
+                        if (!targetNode) {
+                            targetNode = { id: 'sh_' + i + '_' + Math.random().toString(36).slice(2, 6), name: part, level: null, desc: '', parent: parentId };
+                            snapshot.strongholds.push(targetNode);
+                        }
+                        parentId = targetNode.id;
+                    }
+                    if (blocked || !targetNode) continue;
+                    if (bc.field === 'level') targetNode.level = typeof bc.value === 'number' ? bc.value : parseInt(bc.value);
+                    else if (bc.field === 'desc') targetNode.desc = String(bc.value);
                 }
             }
         }
@@ -4883,11 +4916,11 @@ Therefore, when writing this turn's <horae> tags, you MUST also include events f
             const rpg = this.getChat()?.[0]?.horae_meta?.rpg;
             const nodes = rpg?.strongholds || [];
             p += L(
-                `\n【据点/基地】据点状态变化时写（升级/建造/损毁/描述变更），无变化可省略\n`,
-                `\n[Strongholds] Write when stronghold status changes (upgrade/build/destroy/description update); skip if unchanged\n`,
-                `\n【拠点/基地】拠点の状態が変化した時に記載（アップグレード/建設/破壊/説明更新）、変化なしなら省略可\n`,
-                `\n【거점/기지】거점 상태 변화 시 기재(업그레이드/건설/파괴/설명 변경), 변화 없으면 생략 가능\n`,
-                `\n[Крепости] Записывайте при изменении статуса крепости (улучшение/строительство/разрушение/обновление описания); пропускайте, если без изменений\n`
+                `\n【据点/基地】据点状态变化时写（升级/建造/损毁/描述变更），无变化可省略。已有据点必须始终使用与下方「当前据点」完全一致的名称，禁止对已有名称做缩写/改写/加前缀变体\n`,
+                `\n[Strongholds] Write when stronghold status changes (upgrade/build/destroy/description update); skip if unchanged. Existing strongholds MUST always use the exact same name as listed in "Current strongholds" below — no abbreviations, rewrites, or prefixed variants of existing names\n`,
+                `\n【拠点/基地】拠点の状態が変化した時に記載（アップグレード/建設/破壊/説明更新）、変化なしなら省略可。既存の拠点名は下記「現在の拠点」と完全一致させる — 省略・言い換え・接頭辞変形は禁止\n`,
+                `\n【거점/기지】거점 상태 변화 시 기재(업그레이드/건설/파괴/설명 변경), 변화 없으면 생략 가능. 기존 거점은 아래 '현재 거점'에 표시된 이름과 정확히 일치해야 함 — 줄임/변형/접두사 변형 금지\n`,
+                `\n[Крепости] Записывайте при изменении статуса крепости (улучшение/строительство/разрушение/обновление описания); пропускайте, если без изменений. Существующие крепости ДОЛЖНЫ использовать точно такие же названия, как в списке ниже — сокращения, переименования и варианты с префиксами запрещены\n`
             );
             p += L(
                 `格式: base:据点路径=等级 或 base:据点路径|desc=描述\n路径用 > 分隔层级\n`,
