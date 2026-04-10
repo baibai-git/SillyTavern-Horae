@@ -1107,12 +1107,13 @@ class HoraeManager {
             }
         }
         
-        // 自定义表格数据（合并全局和本地）
+        // 自定义表格数据（合并全局、角色和本地）
         const chat = this.getChat();
         const firstMsg = chat?.[0];
         const localTables = firstMsg?.horae_meta?.customTables || [];
+        const resolvedCharacter = this._getResolvedCharacterTables();
         const resolvedGlobal = this._getResolvedGlobalTables();
-        const allTables = [...resolvedGlobal, ...localTables];
+        const allTables = [...resolvedGlobal, ...resolvedCharacter, ...localTables];
         for (const table of allTables) {
             const rows = table.rows || 2;
             const cols = table.cols || 2;
@@ -1254,7 +1255,7 @@ class HoraeManager {
         const eventMatch = allEventMatches.length > 1
             ? ([...allEventMatches].reverse().find(m => /^event:/m.test(m[1])) || allEventMatches[allEventMatches.length - 1])
             : allEventMatches[0] || null;
-        const tableMatches = [...message.matchAll(/<horaetable[:：]\s*(.+?)>([\s\S]*?)<\/horaetable>/gi)];
+        const tableMatches = [...message.matchAll(/<horaetable[:：]\s*(.+?)>([\s\S]*?)<\/horaetable(?:[:：][^>]*)?>/gi)];
         const rpgMatches = [...message.matchAll(/<horaerpg>([\s\S]*?)<\/horaerpg>/gi)];
         
         if (!match && !eventMatch && tableMatches.length === 0 && rpgMatches.length === 0) return null;
@@ -2687,6 +2688,68 @@ class HoraeManager {
         return result;
     }
 
+    /**
+     * 获取角色表格的当前对话数据（per-chat overlay）
+     * 角色表格的结构（表头、名称、提示词、锁定）绑定角色卡，数据按对话分离
+     */
+    _getResolvedCharacterTables() {
+        const charId = this.context?.characterId;
+        if (charId == null) return [];
+        const charData = this.context?.characters?.[charId]?.data;
+        if (!charData?.extensions?.horae?.charTables) return [];
+
+        const templates = charData.extensions.horae.charTables;
+        const chat = this.getChat();
+        if (!chat?.[0] || templates.length === 0) return [];
+
+        const firstMsg = chat[0];
+        if (!firstMsg.horae_meta) firstMsg.horae_meta = createEmptyMeta();
+        if (!firstMsg.horae_meta.charTableData) firstMsg.horae_meta.charTableData = {};
+        const perChatData = firstMsg.horae_meta.charTableData;
+
+        const result = [];
+        for (const template of templates) {
+            const name = (template.name || '').trim();
+            if (!name) continue;
+
+            if (!perChatData[name]) {
+                const initData = JSON.parse(JSON.stringify(template.data || {}));
+                perChatData[name] = {
+                    data: initData,
+                    rows: template.rows || 2,
+                    cols: template.cols || 2,
+                    baseData: JSON.parse(JSON.stringify(initData)),
+                    baseRows: template.rows || 2,
+                    baseCols: template.cols || 2,
+                };
+            } else {
+                const templateData = template.data || {};
+                for (const key of Object.keys(templateData)) {
+                    const [r, c] = key.split('-').map(Number);
+                    if (r === 0 || c === 0) {
+                        perChatData[name].data[key] = templateData[key];
+                    }
+                }
+            }
+
+            const overlay = perChatData[name];
+            result.push({
+                name: template.name,
+                prompt: template.prompt,
+                lockedRows: template.lockedRows || [],
+                lockedCols: template.lockedCols || [],
+                lockedCells: template.lockedCells || [],
+                data: overlay.data,
+                rows: overlay.rows,
+                cols: overlay.cols,
+                baseData: overlay.baseData,
+                baseRows: overlay.baseRows,
+                baseCols: overlay.baseCols,
+            });
+        }
+        return result;
+    }
+
     /** 处理AI回复，解析标签并存储元数据 */
     processAIResponse(messageIndex, messageContent) {
         // 根据用户配置的剔除标签，整块移除小剧场等自定义区块，防止其内部的 horae 标签污染正文解析
@@ -2851,7 +2914,7 @@ class HoraeManager {
         return updates;
     }
 
-    /** 将表格更新写入 chat[0]（本地表格）或 per-card overlay（全局表格） */
+    /** 将表格更新写入 chat[0]（本地表格）、角色表格 overlay 或全局表格 overlay */
     applyTableUpdates(tableUpdates) {
         if (!tableUpdates || tableUpdates.length === 0) return;
 
@@ -2863,12 +2926,18 @@ class HoraeManager {
         if (!firstMsg.horae_meta.customTables) firstMsg.horae_meta.customTables = [];
 
         const localTables = firstMsg.horae_meta.customTables;
+        const resolvedCharacter = this._getResolvedCharacterTables();
         const resolvedGlobal = this._getResolvedGlobalTables();
 
         for (const update of tableUpdates) {
             const updateName = (update.name || '').trim();
             let table = localTables.find(t => (t.name || '').trim() === updateName);
             let isGlobal = false;
+            let isCharacter = false;
+            if (!table) {
+                table = resolvedCharacter.find(t => (t.name || '').trim() === updateName);
+                isCharacter = !!table;
+            }
             if (!table) {
                 table = resolvedGlobal.find(t => (t.name || '').trim() === updateName);
                 isGlobal = true;
@@ -2917,12 +2986,19 @@ class HoraeManager {
                 if (c + 1 > (table.cols || 2)) table.cols = c + 1;
             }
 
-            // 全局表格：将维度变更同步回 per-card overlay
+            // 全局/角色表格：将维度变更同步回 overlay
             if (isGlobal) {
                 const perCardData = firstMsg.horae_meta?.globalTableData;
                 if (perCardData?.[updateName]) {
                     perCardData[updateName].rows = table.rows;
                     perCardData[updateName].cols = table.cols;
+                }
+            }
+            if (isCharacter) {
+                const perChatData = firstMsg.horae_meta?.charTableData;
+                if (perChatData?.[updateName]) {
+                    perChatData[updateName].rows = table.rows;
+                    perChatData[updateName].cols = table.cols;
                 }
             }
 
@@ -2982,6 +3058,12 @@ class HoraeManager {
         for (const overlay of Object.values(perCardData)) {
             resetTable(overlay);
         }
+
+        // 1c. 重置角色表格的 per-chat overlay
+        const charTableOverlays = firstMsg.horae_meta?.charTableData || {};
+        for (const overlay of Object.values(charTableOverlays)) {
+            resetTable(overlay);
+        }
         
         // 2. 预扫描：找到每个表格最后一个 _isUserEdit 所在的消息索引
         const lastUserEditIdx = new Map();
@@ -3026,7 +3108,7 @@ class HoraeManager {
         let skipped = 0;
 
         const PRESERVE_KEYS = [
-            'autoSummaries', 'customTables', 'globalTableData',
+            'autoSummaries', 'customTables', 'globalTableData', 'charTableData',
             'locationMemory', 'relationships', 'tableContributions',
             'rpg', '_rpgChanges',
             '_deletedNpcs', '_deletedAgendaTexts'
@@ -4199,8 +4281,9 @@ Scene Memory records a location's core layout and permanent features (architectu
         const chat = this.getChat();
         const firstMsg = chat?.[0];
         const localTables = firstMsg?.horae_meta?.customTables || [];
+        const resolvedCharacter = this._getResolvedCharacterTables();
         const resolvedGlobal = this._getResolvedGlobalTables();
-        const allTables = [...resolvedGlobal, ...localTables];
+        const allTables = [...resolvedGlobal, ...resolvedCharacter, ...localTables];
         if (allTables.length === 0) return '';
 
         let prompt = '\n' + (this.settings?.customTablesPrompt || this.getDefaultTablesPrompt());
@@ -5242,7 +5325,7 @@ Therefore, when writing this turn's <horae> tags, you MUST also include events f
         }
 
         // 表格更新
-        const tableMatches = [...message.matchAll(/<horaetable[:：]\s*(.+?)>([\s\S]*?)<\/horaetable>/gi)];
+        const tableMatches = [...message.matchAll(/<horaetable[:：]\s*(.+?)>([\s\S]*?)<\/horaetable(?:[:：][^>]*)?>/gi)];
         if (tableMatches.length > 0) {
             result.tableUpdates = [];
             for (const tm of tableMatches) {
