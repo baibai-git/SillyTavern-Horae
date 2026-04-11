@@ -2028,7 +2028,7 @@ class HoraeManager {
                     const clamped = Math.max(cfg?.min ?? -100, Math.min(cfg?.max ?? 100, val));
                     if (!rpg.reputation[owner][catName]) {
                         rpg.reputation[owner][catName] = { value: clamped, subItems: {} };
-                    } else {
+                    } else if (!rpg.reputation[owner][catName]._userEdited) {
                         rpg.reputation[owner][catName].value = clamped;
                     }
                 }
@@ -2148,7 +2148,7 @@ class HoraeManager {
                 if (!rpg.skills[del.owner].length) delete rpg.skills[del.owner];
             }
         }
-        // 回填用户设置的声望细项（AI只写主数值，细项是纯用户数据）
+        // 回填用户设置的声望（_userEdited 的主数值优先于 AI 回放结果）
         const deletedRepCats = new Set(rpg.reputationConfig?._deletedCategories || []);
         const validRepCats = new Set((rpg.reputationConfig?.categories || []).map(c => c.name));
         for (const [owner, cats] of Object.entries(oldReputation)) {
@@ -2159,6 +2159,10 @@ class HoraeManager {
                     rpg.reputation[owner][catName] = data;
                 } else {
                     rpg.reputation[owner][catName].subItems = data.subItems || {};
+                    if (data._userEdited) {
+                        rpg.reputation[owner][catName].value = data.value;
+                        rpg.reputation[owner][catName]._userEdited = true;
+                    }
                 }
             }
         }
@@ -2347,7 +2351,7 @@ class HoraeManager {
                 if (!snapshot.skills[del.owner].length) delete snapshot.skills[del.owner];
             }
         }
-        // 声望：合入用户细项，过滤已删除分类
+        // 声望：合入用户细项，_userEdited 的主数值优先于 AI 回放结果
         const repConfig = rpgMeta.reputationConfig || { categories: [], _deletedCategories: [] };
         const validRepNames = new Set((repConfig.categories || []).map(c => c.name));
         const deletedRepNames = new Set(repConfig._deletedCategories || []);
@@ -2360,6 +2364,10 @@ class HoraeManager {
                     snapshot.reputation[owner][catName] = { ...data };
                 } else {
                     snapshot.reputation[owner][catName].subItems = data.subItems || {};
+                    if (data._userEdited) {
+                        snapshot.reputation[owner][catName].value = data.value;
+                        snapshot.reputation[owner][catName]._userEdited = true;
+                    }
                 }
             }
         }

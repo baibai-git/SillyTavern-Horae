@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.11.9
+ * 版本: 1.11.10
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -21,7 +21,7 @@ import { t, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLan
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.11.9';
+const VERSION = '1.11.10';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -6225,6 +6225,7 @@ function _bindReputationConfigEvents() {
         const parsed = parseInt(newVal);
         if (isNaN(parsed)) return;
         repValues[owner][catName].value = Math.max(cat.min ?? -100, Math.min(cat.max ?? 100, parsed));
+        repValues[owner][catName]._userEdited = true;
         _saveRepData();
         renderReputationValues();
     });
@@ -13539,14 +13540,14 @@ async function batchAIScan() {
 
     const batches = [];
     let currentBatch = [], currentTokens = 0;
-    for (const t of targets) {
-        const tokens = estimateTokens(t.text);
+    for (const target of targets) {
+        const tokens = estimateTokens(target.text);
         if (currentBatch.length > 0 && currentTokens + tokens > tokenLimit) {
             batches.push(currentBatch);
             currentBatch = [];
             currentTokens = 0;
         }
-        currentBatch.push(t);
+        currentBatch.push(target);
         currentTokens += tokens;
     }
     if (currentBatch.length > 0) batches.push(currentBatch);
@@ -13638,7 +13639,7 @@ async function executeBatchScan(batches, options = {}) {
         textEl.textContent = t('toast.aiBatchDone', {n: `${b + 1}/${batches.length}`});
         fillEl.style.width = `${Math.round((b / batches.length) * 100)}%`;
 
-        const messagesBlock = batch.map(t => `【消息#${t.index}】\n${t.text}`).join('\n\n');
+        const messagesBlock = batch.map(msg => `【消息#${msg.index}】\n${msg.text}`).join('\n\n');
 
         // 自定义摘要prompt或默认
         let batchPrompt;
@@ -13700,7 +13701,7 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
 
         try {
             const response = await Promise.race([
-                context.generateRaw({ prompt: batchPrompt }),
+                context.generateRaw(batchPrompt, null, false, false),
                 cancelPromise.then(() => null)
             ]);
             if (cancelled) break;
@@ -13709,7 +13710,8 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
                 showToast(t('toast.aiBatchNoContent', {n: b + 1}), 'warning');
                 continue;
             }
-            const segments = response.split(/===消息#(\d+)===/);
+            const cleanedResponse = response.replace(/<think(?:ing)?[\s>][\s\S]*?<\/think(?:ing)?>/gi, '');
+            const segments = cleanedResponse.split(/={2,}\s*(?:消息|[Mm]essage)\s*#\s*(\d+)\s*={2,}/);
             if (segments.length <= 1) {
                 console.warn(`[Horae] 第 ${b + 1} 批：AI 回复格式不匹配（未找到 ===消息#N=== 分隔符）`, response.substring(0, 300));
                 showToast(t('toast.aiBatchFormatError', {n: b + 1}), 'warning');
@@ -13874,7 +13876,7 @@ function showScanReviewModal(scanResults, scanOptions) {
         { id: 'affection', label: t('characters.affection'), icon: 'fa-heart', items: categories.affection },
         { id: 'scenes', label: t('tabs.locations'), icon: 'fa-map-location-dot', items: categories.scenes },
         { id: 'relationships', label: t('characters.relationships'), icon: 'fa-people-arrows', items: categories.relationships }
-    ].filter(t => t.items.length > 0);
+    ].filter(tab => tab.items.length > 0);
 
     if (tabs.length === 0) {
         showToast(t('toast.insufficientEvents'), 'warning');
@@ -13885,14 +13887,14 @@ function showScanReviewModal(scanResults, scanOptions) {
     modal.className = 'horae-modal horae-review-modal' + (isLightMode() ? ' horae-light' : '');
 
     const activeTab = tabs[0].id;
-    const tabsHtml = tabs.map(t =>
-        `<button class="horae-review-tab ${t.id === activeTab ? 'active' : ''}" data-tab="${t.id}">
-            <i class="fa-solid ${t.icon}"></i> ${t.label} <span class="tab-count">${t.items.length}</span>
+    const tabsHtml = tabs.map(tab =>
+        `<button class="horae-review-tab ${tab.id === activeTab ? 'active' : ''}" data-tab="${tab.id}">
+            <i class="fa-solid ${tab.icon}"></i> ${tab.label} <span class="tab-count">${tab.items.length}</span>
         </button>`
     ).join('');
 
-    const panelsHtml = tabs.map(t => {
-        const itemsHtml = t.items.map(item => {
+    const panelsHtml = tabs.map(tab => {
+        const itemsHtml = tab.items.map(item => {
             const itemKey = escapeHtml(makeReviewKey(item));
             const levelAttr = item.level ? ` data-level="${escapeHtml(item.level)}"` : '';
             const levelBadge = item.level ? `<span class="horae-level-badge ${(item.level === '关键' || item.level === '關鍵') ? 'critical' : item.level === '重要' ? 'important' : ''}" style="font-size:10px;margin-right:4px;">${escapeHtml(item.level)}</span>` : '';
@@ -13910,12 +13912,12 @@ function showScanReviewModal(scanResults, scanOptions) {
                 </button>
             </div>`;
         }).join('');
-        return `<div class="horae-review-panel ${t.id === activeTab ? 'active' : ''}" data-panel="${t.id}">
+        return `<div class="horae-review-panel ${tab.id === activeTab ? 'active' : ''}" data-panel="${tab.id}">
             ${itemsHtml || `<div class="horae-review-empty">${t('ui.noReviewData')}</div>`}
         </div>`;
     }).join('');
 
-    const totalCount = tabs.reduce((s, t) => s + t.items.length, 0);
+    const totalCount = tabs.reduce((s, tab) => s + tab.items.length, 0);
 
     modal.innerHTML = `
         <div class="horae-modal-content">
@@ -13972,9 +13974,9 @@ function showScanReviewModal(scanResults, scanOptions) {
         const rescanBtn = modal.querySelector('#horae-review-rescan');
         rescanBtn.disabled = count === 0;
         rescanBtn.style.opacity = count === 0 ? '0.5' : '1';
-        for (const t of tabs) {
-            const remain = t.items.filter(i => !deletedSet.has(makeReviewKey(i))).length;
-            const badge = modal.querySelector(`.horae-review-tab[data-tab="${t.id}"] .tab-count`);
+        for (const tab of tabs) {
+            const remain = tab.items.filter(i => !deletedSet.has(makeReviewKey(i))).length;
+            const badge = modal.querySelector(`.horae-review-tab[data-tab="${tab.id}"] .tab-count`);
             if (badge) badge.textContent = remain;
         }
     }
@@ -14040,10 +14042,10 @@ function showScanReviewModal(scanResults, scanOptions) {
         const tokenLimit = 80000;
         const rescanBatches = [];
         let cb = [], ct = 0;
-        for (const t of rescanTargets) {
-            const tk = estimateTokens(t.text);
+        for (const target of rescanTargets) {
+            const tk = estimateTokens(target.text);
             if (cb.length > 0 && ct + tk > tokenLimit) { rescanBatches.push(cb); cb = []; ct = 0; }
-            cb.push(t); ct += tk;
+            cb.push(target); ct += tk;
         }
         if (cb.length > 0) rescanBatches.push(cb);
 
@@ -14483,7 +14485,7 @@ async function analyzeMessageWithAI(messageContent) {
     }
 
     try {
-        const response = await context.generateRaw({ prompt: analysisPrompt });
+        const response = await context.generateRaw(analysisPrompt, null, false, false);
         
         if (response) {
             const parsed = horaeManager.parseHoraeTag(response);
