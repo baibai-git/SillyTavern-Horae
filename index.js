@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.11.12
+ * 版本: 1.11.13
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -21,7 +21,7 @@ import { t, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLan
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.11.12';
+const VERSION = '1.11.13';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -7539,7 +7539,7 @@ function refreshAllDisplays() {
 const _GLOBAL_META_KEYS = [
     'autoSummaries', '_deletedNpcs', '_deletedAgendaTexts',
     'locationMemory', 'relationships', 'rpg',
-    '_rpgConfigs',
+    '_rpgConfigs', '_pendingScanReview',
 ];
 
 function _saveGlobalMeta(meta) {
@@ -13632,7 +13632,7 @@ async function batchAIScan() {
     showScanReviewModal(scanResults, { includeNpc, includeAffection, includeScene, includeRelationship });
 }
 
-/** 执行批量扫描，返回暂存结果（不写入chat） */
+/** 执行批量扫描，每批完成后立即写入 chat 并保存（防止中途崩溃丢失已扫描数据） */
 async function executeBatchScan(batches, options = {}) {
     const { includeNpc, includeAffection, includeScene, includeRelationship } = options;
     let cancelled = false;
@@ -13786,6 +13786,7 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
                 showToast(t('toast.aiBatchFormatError', {n: b + 1}), 'warning');
                 continue;
             }
+            const batchWritten = [];
             for (let s = 1; s < segments.length; s += 2) {
                 const msgIndex = parseInt(segments[s]);
                 const content = segments[s + 1] || '';
@@ -13809,10 +13810,36 @@ event:重要程度|事件简述（30-50字，重要程度：一般/重要/关键
                     }
                     newMeta._aiScanned = true;
 
+                    // 立即写入 chat
+                    if (newMeta.scene?.location && newMeta.scene?.scene_desc) {
+                        horaeManager._updateLocationMemory(newMeta.scene.location, newMeta.scene.scene_desc);
+                    }
+                    if (newMeta.relationships?.length > 0) {
+                        horaeManager._mergeRelationships(newMeta.relationships);
+                    }
+                    horaeManager.setMessageMeta(msgIndex, newMeta);
+                    injectHoraeTagToMessage(msgIndex, newMeta);
+
                     const chatRef = horaeManager.getChat();
                     const preview = (chatRef[msgIndex]?.mes || '').substring(0, 60);
                     scanResults.push({ msgIndex, newMeta, preview, _deleted: false });
+                    batchWritten.push(msgIndex);
                 }
+            }
+            // 每批完成后保存并更新 _pendingScanReview 标记
+            if (batchWritten.length > 0) {
+                const chatRef = horaeManager.getChat();
+                if (chatRef?.[0]) {
+                    if (!chatRef[0].horae_meta) chatRef[0].horae_meta = createEmptyMeta();
+                    if (!chatRef[0].horae_meta._pendingScanReview) {
+                        chatRef[0].horae_meta._pendingScanReview = {
+                            msgIndices: [], options, startedAt: new Date().toISOString()
+                        };
+                    }
+                    chatRef[0].horae_meta._pendingScanReview.msgIndices.push(...batchWritten);
+                }
+                horaeManager.rebuildTableData();
+                try { await context.saveChat(); } catch (_) {}
             }
         } catch (err) {
             if (cancelled || err?.name === 'AbortError') break;
@@ -14050,40 +14077,66 @@ function showScanReviewModal(scanResults, scanOptions) {
         }
     }
 
-    // 确认保存
+    // 确认保存（数据已在扫描时写入 chat，此处只需处理用户删除的条目并清除待审阅标记）
     modal.querySelector('#horae-review-confirm').addEventListener('click', async () => {
+        // applyDeletedToResults 会直接修改 scanResults[ri].newMeta（即 chat 中的 meta 引用）
         applyDeletedToResults(scanResults, deletedSet, categories);
-        let saved = 0;
+        // 对被完全删空的 result，同步更新正文标签
         for (const r of scanResults) {
-            if (r._deleted) continue;
-            const m = r.newMeta;
-            const hasData = (m.events?.length > 0) || Object.keys(m.items || {}).length > 0 ||
-                Object.keys(m.npcs || {}).length > 0 || Object.keys(m.affection || {}).length > 0 ||
-                m.timestamp?.story_date || (m.scene?.scene_desc) || (m.relationships?.length > 0);
-            if (!hasData) continue;
-            m._aiScanned = true;
-            // 场景记忆写入 locationMemory
-            if (m.scene?.location && m.scene?.scene_desc) {
-                horaeManager._updateLocationMemory(m.scene.location, m.scene.scene_desc);
+            if (!r._deleted) continue;
+            injectHoraeTagToMessage(r.msgIndex, horaeManager.getMessageMeta(r.msgIndex) || createEmptyMeta());
+        }
+        // 对部分删除的 result，也需要重新注入标签（因为 applyDeletedToResults 修改了内容）
+        if (deletedSet.size > 0) {
+            for (const r of scanResults) {
+                if (r._deleted) continue;
+                injectHoraeTagToMessage(r.msgIndex, r.newMeta);
             }
-            // 关系网络合并
-            if (m.relationships?.length > 0) {
-                horaeManager._mergeRelationships(m.relationships);
-            }
-            horaeManager.setMessageMeta(r.msgIndex, m);
-            injectHoraeTagToMessage(r.msgIndex, m);
-            saved++;
+        }
+        // 清除待审阅标记
+        const chat = horaeManager.getChat();
+        if (chat?.[0]?.horae_meta?._pendingScanReview) {
+            delete chat[0].horae_meta._pendingScanReview;
         }
         horaeManager.rebuildTableData();
         await getContext().saveChat();
         modal.remove();
+        const saved = scanResults.filter(r => !r._deleted).length;
         showToast(t('toast.summariesSaved', {n: saved}), 'success');
         refreshAllDisplays();
         renderCustomTablesList();
     });
 
-    // 取消
-    const closeModal = () => { if (confirm(t('confirm.closeReview'))) modal.remove(); };
+    // 取消（丢弃所有本次扫描写入的数据）
+    const closeModal = async () => {
+        if (!confirm(t('confirm.discardScanReview'))) return;
+        const chat = horaeManager.getChat();
+        // 回滚所有本次扫描写入的数据
+        const pendingIndices = chat?.[0]?.horae_meta?._pendingScanReview?.msgIndices || [];
+        const rollbackSet = new Set(pendingIndices);
+        for (const r of scanResults) rollbackSet.add(r.msgIndex);
+        for (const idx of rollbackSet) {
+            const meta = chat?.[idx]?.horae_meta;
+            if (!meta?._aiScanned) continue;
+            meta.events = [];
+            meta.items = {};
+            meta.npcs = {};
+            meta.affection = {};
+            if (meta.scene) meta.scene = {};
+            if (meta.relationships) meta.relationships = [];
+            delete meta._aiScanned;
+            injectHoraeTagToMessage(idx, meta);
+        }
+        if (chat?.[0]?.horae_meta?._pendingScanReview) {
+            delete chat[0].horae_meta._pendingScanReview;
+        }
+        horaeManager.rebuildTableData();
+        try { await getContext().saveChat(); } catch (_) {}
+        modal.remove();
+        showToast(t('toast.aiSummaryUndone', {n: rollbackSet.size}), 'info');
+        refreshAllDisplays();
+        renderCustomTablesList();
+    };
     modal.querySelector('#horae-review-cancel').addEventListener('click', closeModal);
     modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
 
@@ -14164,6 +14217,96 @@ function applyDeletedToResults(scanResults, deletedSet, categories) {
             (meta.scene?.scene_desc) || (meta.relationships?.length > 0);
         if (!hasData) scanResults[ri]._deleted = true;
     }
+}
+
+/** 从已写入 chat 的数据中重建 scanResults（用于中断恢复后弹出审阅窗口） */
+function rebuildScanResultsFromChat(msgIndices) {
+    const chat = horaeManager.getChat();
+    if (!chat) return [];
+    const results = [];
+    for (const idx of msgIndices) {
+        const msg = chat[idx];
+        if (!msg?.horae_meta?._aiScanned) continue;
+        const meta = msg.horae_meta;
+        const preview = (msg.mes || '').substring(0, 60);
+        results.push({ msgIndex: idx, newMeta: meta, preview, _deleted: false });
+    }
+    return results;
+}
+
+/** 中断恢复弹窗（三按钮：审阅 / 丢弃 / 保留） */
+function _showPendingScanRecoveryModal(chat, pending, count) {
+    const modal = document.createElement('div');
+    modal.className = 'horae-modal' + (isLightMode() ? ' horae-light' : '');
+    modal.innerHTML = `
+        <div class="horae-modal-content" style="max-width: 460px;">
+            <div class="horae-modal-header">
+                <i class="fa-solid fa-triangle-exclamation" style="color:var(--horae-warning,#f0ad4e);"></i>
+                ${t('ui.pendingScanTitle')}
+            </div>
+            <div style="padding:16px;line-height:1.6;">
+                ${t('ui.pendingScanDesc', {n: count})}
+            </div>
+            <div class="horae-modal-footer" style="gap:8px;flex-wrap:wrap;justify-content:center;">
+                <button class="horae-btn primary" id="horae-recover-review">
+                    <i class="fa-solid fa-magnifying-glass"></i> ${t('ui.openReview')}
+                </button>
+                <button class="horae-btn" id="horae-recover-keep">
+                    <i class="fa-solid fa-check"></i> ${t('ui.keepData')}
+                </button>
+                <button class="horae-btn" id="horae-recover-discard" style="color:var(--horae-danger,#d9534f);">
+                    <i class="fa-solid fa-trash-can"></i> ${t('ui.discardAll')}
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    preventModalBubble(modal);
+
+    modal.querySelector('#horae-recover-review').addEventListener('click', () => {
+        modal.remove();
+        const rebuilt = rebuildScanResultsFromChat(pending.msgIndices);
+        if (rebuilt.length > 0) {
+            showScanReviewModal(rebuilt, pending.options || {});
+        } else {
+            delete chat[0].horae_meta._pendingScanReview;
+            getContext().saveChat();
+            showToast(t('toast.noAiSummaryData'), 'info');
+        }
+    });
+
+    modal.querySelector('#horae-recover-keep').addEventListener('click', async () => {
+        modal.remove();
+        delete chat[0].horae_meta._pendingScanReview;
+        await getContext().saveChat();
+        showToast(t('toast.summariesSaved', {n: count}), 'success');
+        refreshAllDisplays();
+    });
+
+    modal.querySelector('#horae-recover-discard').addEventListener('click', async () => {
+        if (!confirm(t('confirm.discardScanReview'))) return;
+        modal.remove();
+        for (const idx of pending.msgIndices) {
+            const meta = chat[idx]?.horae_meta;
+            if (!meta?._aiScanned) continue;
+            meta.events = [];
+            meta.items = {};
+            meta.npcs = {};
+            meta.affection = {};
+            if (meta.scene) meta.scene = {};
+            if (meta.relationships) meta.relationships = [];
+            delete meta._aiScanned;
+            injectHoraeTagToMessage(idx, meta);
+        }
+        delete chat[0].horae_meta._pendingScanReview;
+        horaeManager.rebuildTableData();
+        await getContext().saveChat();
+        showToast(t('toast.aiSummaryUndone', {n: count}), 'info');
+        refreshAllDisplays();
+        renderCustomTablesList();
+    });
+
+    modal.addEventListener('click', e => { if (e.target === modal) e.stopPropagation(); });
 }
 
 /** AI摘要配置弹窗 */
@@ -14969,6 +15112,14 @@ async function onChatChanged() {
                     messageEl.classList.add('horae-processed');
                 }
             });
+
+            // 中断恢复：检测是否有未审阅的 AI 扫描结果
+            const _pChat = horaeManager.getChat();
+            const _pending = _pChat?.[0]?.horae_meta?._pendingScanReview;
+            if (_pending?.msgIndices?.length > 0) {
+                const count = _pending.msgIndices.length;
+                setTimeout(() => _showPendingScanRecoveryModal(_pChat, _pending, count), 1000);
+            }
         } catch (err) {
             console.error('[Horae] onChatChanged 面板渲染失败:', err);
         }
