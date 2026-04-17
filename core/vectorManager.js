@@ -1392,8 +1392,9 @@ export class VectorManager {
 
     async _embedApi(texts) {
         const endpoint = `${this._apiUrl}/embeddings`;
+        let resp;
         try {
-            const resp = await fetch(endpoint, {
+            resp = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1404,21 +1405,49 @@ export class VectorManager {
                     input: texts,
                 }),
             });
-            if (!resp.ok) {
-                const errText = await resp.text().catch(() => '');
-                throw new Error(`API ${resp.status}: ${errText.slice(0, 200)}`);
+        } catch (err) {
+            console.error('[Horae Vector] API embedding 网络异常:', err);
+            const wrapped = new Error(err?.message || 'Network error');
+            // TypeError 通常是 CORS、DNS 解析失败、连接被拒绝等浏览器层 fetch 失败
+            if (err instanceof TypeError) {
+                wrapped.code = 'NETWORK';
+            } else if (/timeout|timed out/i.test(err?.message || '')) {
+                wrapped.code = 'TIMEOUT';
+            } else if (/socket hang up|ECONNRESET|ECONNREFUSED/i.test(err?.message || '')) {
+                wrapped.code = 'NETWORK';
+            } else {
+                wrapped.code = 'UNKNOWN';
             }
+            wrapped.cause = err;
+            throw wrapped;
+        }
+
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            const wrapped = new Error(`API ${resp.status}: ${errText.slice(0, 200)}`);
+            wrapped.status = resp.status;
+            wrapped.body = errText.slice(0, 500);
+            console.error('[Horae Vector] API embedding HTTP 错误:', wrapped);
+            throw wrapped;
+        }
+
+        try {
             const json = await resp.json();
             if (!json.data || !Array.isArray(json.data)) {
-                throw new Error('API 返回格式异常：缺少 data 数组');
+                const wrapped = new Error('API 返回格式异常：缺少 data 数组');
+                wrapped.code = 'FORMAT';
+                throw wrapped;
             }
             const vectors = json.data
                 .sort((a, b) => a.index - b.index)
                 .map(d => d.embedding);
             return { vectors };
         } catch (err) {
-            console.error('[Horae Vector] API embedding 失败:', err);
-            throw err;
+            if (err.code === 'FORMAT') throw err;
+            const wrapped = new Error(err?.message || 'Invalid JSON response');
+            wrapped.code = 'FORMAT';
+            console.error('[Horae Vector] API embedding 响应解析失败:', err);
+            throw wrapped;
         }
     }
 

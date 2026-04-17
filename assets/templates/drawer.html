@@ -10,7 +10,7 @@
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">v1.11.13</span>
+            <span class="horae-version">v1.11.14</span>
         </div>
         
         <!-- 标签页导航 -->
@@ -209,6 +209,9 @@
                 <div class="horae-subsection">
                     <div class="horae-subsection-title" data-i18n="characters.npcList">
                         角色
+                        <button id="horae-btn-npc-add" class="horae-icon-btn small" data-i18n-title="tooltip.addNpc" title="">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
                         <button id="horae-btn-npc-multiselect" class="horae-icon-btn small" data-i18n-title="tooltip.multiSelectMode" title="">
                             <i class="fa-solid fa-check-double"></i>
                         </button>
@@ -1013,6 +1016,11 @@
                                     </div>
                                     <span class="horae-setting-sub-hint" data-i18n="vector.fetchModelsHint">填好地址和密钥后点击 <i class="fa-solid fa-arrows-rotate"></i> 拉取。<br>推荐: text-embedding-v3 (Qwen) / text-embedding-3-small (OpenAI)</span>
                                 </div>
+                                <div class="horae-setting-item" style="margin-top:6px;">
+                                    <button id="horae-btn-test-vector-api" class="horae-btn" data-i18n="vector.testApi" style="width:100%;">
+                                        <i class="fa-solid fa-plug-circle-check"></i> 测试向量 API 连线
+                                    </button>
+                                </div>
                                 <div class="horae-setting-item">
                                     <label data-i18n="vector.pureMode">
                                         <input type="checkbox" id="horae-setting-vector-pure-mode">
@@ -1347,7 +1355,7 @@
                 </div>
                 
                 <div class="horae-about">
-                    <p>Horae v1.11.13 | 作者: SenriYuki</p>
+                    <p>Horae v1.11.14 | 作者: SenriYuki</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>

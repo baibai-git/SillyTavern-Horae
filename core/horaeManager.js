@@ -1895,9 +1895,18 @@ class HoraeManager {
         }
     }
 
-    /** 通过 N编号 解析归属者的规范名称 */
+    /** 解析归属者：优先 N 编号 → 占位符替换 → NPC/user 别名反查 */
     _resolveRpgOwner(ownerStr) {
-        const m = ownerStr.match(/^N(\d+)\s+(.+)$/);
+        if (ownerStr == null) return ownerStr;
+        let raw = String(ownerStr).trim();
+        if (!raw) return raw;
+
+        const _user = this.context?.name1 || '';
+        const _char = this.context?.name2 || '';
+        if (_user) raw = raw.replace(/\{\{\s*user\s*\}\}/gi, _user);
+        if (_char) raw = raw.replace(/\{\{\s*char\s*\}\}/gi, _char);
+
+        const m = raw.match(/^N(\d+)\s+(.+)$/);
         if (m) {
             const npcId = m[1];
             const padded = padItemId(parseInt(npcId, 10));
@@ -1909,9 +1918,26 @@ class HoraeManager {
                     if (String(info._id) === npcId || info._id === padded) return name;
                 }
             }
-            return m[2].trim();
+            raw = m[2].trim();
         }
-        return ownerStr.trim();
+
+        const chat = this.getChat();
+        if (chat?.length) {
+            for (let i = chat.length - 1; i >= 0; i--) {
+                const npcs = chat[i]?.horae_meta?.npcs;
+                if (!npcs) continue;
+                if (npcs[raw]) return raw;
+                for (const [name, info] of Object.entries(npcs)) {
+                    if (info?._aliases?.includes(raw)) return name;
+                }
+            }
+            const userAliases = chat[0]?.horae_meta?._userAliases;
+            if (_user && Array.isArray(userAliases) && userAliases.includes(raw)) {
+                return _user;
+            }
+        }
+
+        return raw;
     }
 
     /** 合并 RPG 变更到 chat[0].horae_meta.rpg
@@ -3169,7 +3195,8 @@ class HoraeManager {
             'autoSummaries', 'customTables', 'globalTableData', 'charTableData',
             'locationMemory', 'relationships', 'tableContributions',
             'rpg', '_rpgChanges',
-            '_deletedNpcs', '_deletedAgendaTexts'
+            '_deletedNpcs', '_deletedAgendaTexts',
+            '_rpgConfigs', '_pendingScanReview', '_userAddedNpcs'
         ];
 
         for (let i = 0; i < chat.length; i++) {

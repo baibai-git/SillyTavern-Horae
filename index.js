@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.11.13
+ * 版本: 1.11.14
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -21,7 +21,7 @@ import { t, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLan
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.11.13';
+const VERSION = '1.11.14';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -1098,6 +1098,9 @@ function updateStatusDisplay() {
  * 更新时间线显示
  */
 function updateTimelineDisplay() {
+    // 渲染前先确保所有 active 摘要在 events 中都有卡片（缺失就补回，不会 deactivate 摘要）
+    try { cleanOrphanSummaries(); } catch (e) { console.warn('[Horae] projectSummaryCards before render failed:', e); }
+
     const filterLevel = document.getElementById('horae-timeline-filter')?.value || 'all';
     const searchKeyword = (document.getElementById('horae-timeline-search')?.value || '').trim().toLowerCase();
     let events = horaeManager.getEvents(0, filterLevel);
@@ -1419,7 +1422,10 @@ function openSummaryEditModal(summaryId, messageId, eventIndex) {
     const evtsArr = meta?.events || [];
     const evt = evtsArr[eventIndex];
     if (!evt) { showToast(t('toast.summaryNotFound'), 'error'); return; }
-    const currentText = evt.summary || '';
+    // 优先读 autoSummaries.summaryText（持久化的真源），回退到 events 卡片上的 summary
+    const currentText = (summaryEntry && typeof summaryEntry.summaryText === 'string' && summaryEntry.summaryText)
+        ? summaryEntry.summaryText
+        : (evt.summary || '');
 
     const modalHtml = `
         <div id="horae-edit-modal" class="horae-modal${isLightMode() ? ' horae-light' : ''}">
@@ -1455,8 +1461,12 @@ function openSummaryEditModal(summaryId, messageId, eventIndex) {
         e.stopPropagation();
         const newText = document.getElementById('horae-summary-edit-text').value.trim();
         if (!newText) { showToast(t('toast.summaryEmpty'), 'warning'); return; }
-        evt.summary = newText;
+        // autoSummaries.summaryText 是真源，永远写入；events 卡片是投影，存在则同步
         if (summaryEntry) summaryEntry.summaryText = newText;
+        evt.summary = newText;
+        if (typeof messageId === 'number' && messageId > 0) {
+            try { injectHoraeTagToMessage(messageId, meta); } catch (e2) { /* ignore */ }
+        }
         await getContext().saveChat();
         closeEditModal();
         updateTimelineDisplay();
@@ -2085,7 +2095,9 @@ async function compressSelectedTimelineEvents() {
     }
     
     const chat = horaeManager.getChat();
+    const _allSummaries = chat[0]?.horae_meta?.autoSummaries || [];
     const events = [];
+    const _selectedSummaryIds = new Set();
     for (const key of selectedTimelineEvents) {
         const [msgIdx, evtIdx] = key.split('-').map(Number);
         const meta = chat[msgIdx]?.horae_meta;
@@ -2095,12 +2107,15 @@ async function compressSelectedTimelineEvents() {
         if (!evt) continue;
         const date = meta.timestamp?.story_date || '?';
         const time = meta.timestamp?.story_time || '';
+        const isSummary = evt.isSummary || evt.level === '摘要';
+        if (isSummary && evt._summaryId) _selectedSummaryIds.add(evt._summaryId);
         events.push({
             key, msgIdx, evtIdx,
             date, time,
             level: evt.level || '一般',
             summary: evt.summary || '',
-            isSummary: evt.isSummary || evt.level === '摘要'
+            isSummary,
+            _summaryId: evt._summaryId || null
         });
     }
     
@@ -2226,30 +2241,62 @@ async function compressSelectedTimelineEvents() {
         const firstMsg = chat[0];
         if (!firstMsg.horae_meta) firstMsg.horae_meta = createEmptyMeta();
         if (!firstMsg.horae_meta.autoSummaries) firstMsg.horae_meta.autoSummaries = [];
-        
-        // 收集被压缩的原始事件备份
-        const originalEvents = events.map(e => ({
-            msgIdx: e.msgIdx,
-            evtIdx: e.evtIdx,
-            event: { ...chat[e.msgIdx]?.horae_meta?.events?.[e.evtIdx] },
-            timestamp: chat[e.msgIdx]?.horae_meta?.timestamp
-        }));
-        
+
+        // 计算合并范围：旧摘要按其原 range 取并集，普通事件按 msgIdx
+        let rangeMin = Infinity, rangeMax = -Infinity;
+        for (const e of events) {
+            if (e.isSummary && e._summaryId) {
+                const oldEntry = _allSummaries.find(s => s.id === e._summaryId);
+                if (oldEntry?.range && Array.isArray(oldEntry.range) && oldEntry.range.length >= 2) {
+                    rangeMin = Math.min(rangeMin, oldEntry.range[0]);
+                    rangeMax = Math.max(rangeMax, oldEntry.range[1]);
+                    continue;
+                }
+            }
+            rangeMin = Math.min(rangeMin, e.msgIdx);
+            rangeMax = Math.max(rangeMax, e.msgIdx);
+        }
+        if (!isFinite(rangeMin) || !isFinite(rangeMax)) {
+            rangeMin = events[0].msgIdx;
+            rangeMax = events[events.length - 1].msgIdx;
+        }
+
+        // 继承被合并摘要的 originalEvents，便于后续删除时还原
+        const ownOriginal = events
+            .filter(e => !e.isSummary)
+            .map(e => ({
+                msgIdx: e.msgIdx,
+                evtIdx: e.evtIdx,
+                event: { ...chat[e.msgIdx]?.horae_meta?.events?.[e.evtIdx] },
+                timestamp: chat[e.msgIdx]?.horae_meta?.timestamp
+            }));
+        const inheritedOriginal = [];
+        for (const sid of _selectedSummaryIds) {
+            const old = _allSummaries.find(s => s.id === sid);
+            if (old?.originalEvents?.length) inheritedOriginal.push(...old.originalEvents);
+        }
+        const originalEvents = [...inheritedOriginal, ...ownOriginal];
+
         const summaryId = `cs_${Date.now()}`;
         const summaryEntry = {
             id: summaryId,
-            range: [events[0].msgIdx, events[events.length - 1].msgIdx],
+            range: [rangeMin, rangeMax],
             summaryText,
             originalEvents,
             active: true,
             createdAt: new Date().toISOString(),
             auto: false
         };
+        // 剔除被合并的旧 entry，避免重叠
+        if (_selectedSummaryIds.size > 0) {
+            firstMsg.horae_meta.autoSummaries = firstMsg.horae_meta.autoSummaries
+                .filter(s => !_selectedSummaryIds.has(s.id));
+        }
         firstMsg.horae_meta.autoSummaries.push(summaryEntry);
-        
-        // 标记原始事件为已压缩（不删除），兼容旧 meta.event 单数格式
-        // 标记所有涉及消息的全部事件，避免同一消息中未选中的事件泄露
-        const compressedMsgIndices = [...new Set(events.map(e => e.msgIdx))];
+
+        // 标记原始事件为已压缩，并清掉旧摘要卡片
+        const compressedMsgIndices = [];
+        for (let i = rangeMin; i <= rangeMax; i++) compressedMsgIndices.push(i);
         for (const msgIdx of compressedMsgIndices) {
             const meta = chat[msgIdx]?.horae_meta;
             if (!meta) continue;
@@ -2258,16 +2305,20 @@ async function compressSelectedTimelineEvents() {
                 delete meta.event;
             }
             if (!meta.events) continue;
+            if (_selectedSummaryIds.size > 0) {
+                meta.events = meta.events.filter(ev =>
+                    !(ev?.isSummary && ev?._summaryId && _selectedSummaryIds.has(ev._summaryId))
+                );
+            }
             for (let j = 0; j < meta.events.length; j++) {
                 if (meta.events[j] && !meta.events[j].isSummary) {
                     meta.events[j]._compressedBy = summaryId;
                 }
             }
         }
-        
-        // 在最早的消息位置插入摘要事件
-        const firstEvent = events[0];
-        const firstMeta = chat[firstEvent.msgIdx]?.horae_meta;
+
+        // 在 range 起点插入新摘要卡片
+        const firstMeta = chat[rangeMin]?.horae_meta;
         if (firstMeta) {
             if (!firstMeta.events) firstMeta.events = [];
             firstMeta.events.push({
@@ -2278,12 +2329,10 @@ async function compressSelectedTimelineEvents() {
                 _summaryId: summaryId
             });
         }
-        
+
         // 隐藏范围内所有楼层（包括中间的 USER 消息）
-        const hideMin = compressedMsgIndices[0];
-        const hideMax = compressedMsgIndices[compressedMsgIndices.length - 1];
         const hideIndices = [];
-        for (let i = hideMin; i <= hideMax; i++) hideIndices.push(i);
+        for (let i = rangeMin; i <= rangeMax; i++) hideIndices.push(i);
         await setMessagesHidden(chat, hideIndices, true);
         
         await context.saveChat();
@@ -3393,6 +3442,16 @@ function _cascadeDeleteNpcs(names) {
             if (rpg.equipmentConfig?.perChar?.[name]) delete rpg.equipmentConfig.perChar[name];
         }
     }
+
+    // 同步清理 _rpgConfigs，避免下次 rebuild 复活
+    const _cfgs = chat[0]?.horae_meta?._rpgConfigs;
+    if (_cfgs) {
+        for (const name of nameSet) {
+            if (_cfgs.equipmentConfig?.perChar?.[name]) {
+                delete _cfgs.equipmentConfig.perChar[name];
+            }
+        }
+    }
     
     // pinnedNpcs
     if (settings.pinnedNpcs) {
@@ -3408,6 +3467,294 @@ function _cascadeDeleteNpcs(names) {
             chat[0].horae_meta._deletedNpcs.push(name);
         }
     }
+}
+
+/**
+ * 打开「手动添加 NPC」弹窗（精简版）
+ * 字段：名字（必填）/ 别名 / 性别 / 外貌 / 性格 / 关系
+ * 提交前检查：撞名（含 _aliases）→ 提示打开编辑或合并
+ * 写入：chat[最后一条消息].horae_meta.npcs[名字]，并标记 chat[0].horae_meta._userAddedNpcs
+ * 名字旁有 ✨ 按钮可触发 AI 从剧情中补全外貌/性格/关系
+ */
+function openNpcAddModal() {
+    closeEditModal();
+    const state = horaeManager.getLatestState();
+    const existingNpcs = state.npcs || {};
+
+    const genderOptions = [
+        { val: '', label: t('ui.genderUnknown') },
+        { val: '男', label: t('ui.genderMale') },
+        { val: '女', label: t('ui.genderFemale') },
+        { val: '__custom__', label: t('ui.genderCustom') }
+    ].map(o => `<option value="${o.val}">${o.label}</option>`).join('');
+
+    const modalHtml = `
+        <div id="horae-edit-modal" class="horae-modal">
+            <div class="horae-modal-content">
+                <div class="horae-modal-header">
+                    <i class="fa-solid fa-user-plus"></i> ${t('modal.addNpc')}
+                </div>
+                <div class="horae-modal-body horae-edit-modal-body">
+                    <div class="horae-edit-field">
+                        <label>${t('label.npcName')} <span style="color:#e74c3c">*</span></label>
+                        <div style="display:flex;gap:6px;align-items:center;">
+                            <input type="text" id="add-npc-name" placeholder="${t('placeholder.npcNameRequired')}" style="flex:1;min-width:0;">
+                            <button id="add-npc-ai-enrich" class="horae-btn" title="${t('tooltip.aiEnrichNpc')}" style="white-space:nowrap;padding:4px 10px;">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> ${t('label.aiEnrich')}
+                            </button>
+                        </div>
+                        <span class="horae-setting-sub-hint">${t('ui.aiEnrichHint')}</span>
+                    </div>
+                    <div class="horae-edit-field">
+                        <label>${t('label.npcAliases')} <span style="font-weight:normal;color:var(--horae-text-dim);font-size:11px">${t('label.npcAliasesHint')}</span></label>
+                        <input type="text" id="add-npc-aliases" placeholder="${t('placeholder.npcAliases')}">
+                    </div>
+                    <div class="horae-edit-field-row">
+                        <div class="horae-edit-field horae-edit-field-compact">
+                            <label>${t('label.npcGender')}</label>
+                            <select id="add-npc-gender">${genderOptions}</select>
+                            <input type="text" id="add-npc-gender-custom" placeholder="${t('ui.customGenderPlaceholder')}" style="display:none;margin-top:4px;">
+                        </div>
+                        <div class="horae-edit-field horae-edit-field-compact">
+                            <label>${t('label.npcAge')}</label>
+                            <input type="text" id="add-npc-age" placeholder="${t('placeholder.npcAge')}">
+                        </div>
+                    </div>
+                    <div class="horae-edit-field">
+                        <label>${t('label.npcAppearance')}</label>
+                        <textarea id="add-npc-appearance" placeholder="${t('placeholder.npcAppearance')}"></textarea>
+                    </div>
+                    <div class="horae-edit-field">
+                        <label>${t('label.npcPersonality')}</label>
+                        <input type="text" id="add-npc-personality" placeholder="${t('placeholder.npcPersonality')}">
+                    </div>
+                    <div class="horae-edit-field">
+                        <label>${t('label.npcRelationship')}</label>
+                        <input type="text" id="add-npc-relationship" placeholder="${t('placeholder.npcRelationship')}">
+                    </div>
+                </div>
+                <div class="horae-modal-footer">
+                    <button id="add-modal-save" class="horae-btn primary">
+                        <i class="fa-solid fa-check"></i> ${t('common.save')}
+                    </button>
+                    <button id="add-modal-cancel" class="horae-btn">
+                        <i class="fa-solid fa-xmark"></i> ${t('common.cancel')}
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    preventModalBubble();
+
+    document.getElementById('add-npc-gender').addEventListener('change', function() {
+        const customInput = document.getElementById('add-npc-gender-custom');
+        customInput.style.display = this.value === '__custom__' ? 'block' : 'none';
+        if (this.value !== '__custom__') customInput.value = '';
+    });
+
+    // ✨ AI 补全
+    document.getElementById('add-npc-ai-enrich').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        const name = document.getElementById('add-npc-name').value.trim();
+        const aliasesRaw = document.getElementById('add-npc-aliases').value.trim();
+        const aliases = aliasesRaw ? aliasesRaw.split(/[,，、\/]/).map(s => s.trim()).filter(Boolean) : [];
+        if (!name) { showToast(t('toast.npcNameRequired'), 'warning'); return; }
+
+        const btn = e.currentTarget;
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${t('common.loading')}`;
+        try {
+            const enriched = await aiEnrichNpc(name, aliases);
+            if (!enriched) {
+                showToast(t('toast.aiEnrichNoMessages', {name}), 'warning');
+                return;
+            }
+            if (enriched.appearance) document.getElementById('add-npc-appearance').value = enriched.appearance;
+            if (enriched.personality) document.getElementById('add-npc-personality').value = enriched.personality;
+            if (enriched.relationship) document.getElementById('add-npc-relationship').value = enriched.relationship;
+            if (enriched.age) document.getElementById('add-npc-age').value = enriched.age;
+            if (enriched.gender) {
+                const sel = document.getElementById('add-npc-gender');
+                if (['男','女'].includes(enriched.gender)) {
+                    sel.value = enriched.gender;
+                } else {
+                    sel.value = '__custom__';
+                    const ci = document.getElementById('add-npc-gender-custom');
+                    ci.style.display = 'block';
+                    ci.value = enriched.gender;
+                }
+            }
+            showToast(t('toast.aiEnrichDone', {name, n: enriched._matchCount || 0}), 'success');
+        } catch (err) {
+            console.error('[Horae] aiEnrichNpc 失败:', err);
+            showToast(t('toast.aiEnrichFailed', {error: err.message || err}), 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    });
+
+    document.getElementById('add-modal-save').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        const newName = document.getElementById('add-npc-name').value.trim();
+        if (!newName) { showToast(t('toast.npcNameRequired'), 'warning'); return; }
+
+        const aliasesRaw = document.getElementById('add-npc-aliases').value.trim();
+        const aliases = aliasesRaw ? aliasesRaw.split(/[,，、\/]/).map(s => s.trim()).filter(Boolean) : [];
+
+        // 撞名检查：精确名 / 既有 _aliases 包含
+        const lcName = newName.toLowerCase();
+        const lcAliases = aliases.map(a => a.toLowerCase());
+        let conflictName = null;
+        for (const [exName, exNpc] of Object.entries(existingNpcs)) {
+            if (exName.toLowerCase() === lcName) { conflictName = exName; break; }
+            const exAliasesLc = (exNpc?._aliases || []).map(a => a.toLowerCase());
+            if (exAliasesLc.includes(lcName) || lcAliases.some(a => exAliasesLc.includes(a) || a === exName.toLowerCase())) {
+                conflictName = exName;
+                break;
+            }
+        }
+        if (conflictName) {
+            const ok = confirm(t('confirm.npcAlreadyExists', {existing: conflictName, name: newName}));
+            if (ok) {
+                closeEditModal();
+                openNpcEditModal(conflictName);
+            }
+            return;
+        }
+
+        const genderSel = document.getElementById('add-npc-gender').value;
+        const newData = {
+            appearance: document.getElementById('add-npc-appearance').value,
+            personality: document.getElementById('add-npc-personality').value,
+            relationship: document.getElementById('add-npc-relationship').value,
+            gender: genderSel === '__custom__'
+                ? document.getElementById('add-npc-gender-custom').value.trim()
+                : genderSel,
+            age: document.getElementById('add-npc-age').value,
+            first_seen: new Date().toISOString(),
+            last_seen: new Date().toISOString(),
+        };
+        if (aliases.length) newData._aliases = aliases;
+
+        const chat = horaeManager.getChat();
+        if (!chat?.length) { showToast(t('toast.metaNotFound'), 'error'); return; }
+
+        // 写入最后一条消息的 horae_meta.npcs，确保下次 rebuild 时该 NPC 出现
+        const lastIdx = chat.length - 1;
+        let targetMeta = chat[lastIdx].horae_meta;
+        if (!targetMeta) {
+            targetMeta = createEmptyMeta();
+            chat[lastIdx].horae_meta = targetMeta;
+        }
+        if (!targetMeta.npcs) targetMeta.npcs = {};
+        targetMeta.npcs[newName] = newData;
+
+        // 标记到 chat[0]._userAddedNpcs，避免被「失踪过滤」当幽灵清掉
+        if (!chat[0].horae_meta) chat[0].horae_meta = createEmptyMeta();
+        if (!Array.isArray(chat[0].horae_meta._userAddedNpcs)) chat[0].horae_meta._userAddedNpcs = [];
+        if (!chat[0].horae_meta._userAddedNpcs.includes(newName)) {
+            chat[0].horae_meta._userAddedNpcs.push(newName);
+        }
+
+        // 同步从 _deletedNpcs 移除（防止用户先删后加被立刻吞回）
+        const delList = chat[0].horae_meta._deletedNpcs;
+        if (Array.isArray(delList)) {
+            const di = delList.indexOf(newName);
+            if (di !== -1) delList.splice(di, 1);
+        }
+
+        if (lastIdx > 0) injectHoraeTagToMessage(lastIdx, targetMeta);
+
+        await getContext().saveChat();
+        closeEditModal();
+        refreshAllDisplays();
+        showToast(t('toast.npcAdded', {name: newName}), 'success');
+    });
+
+    document.getElementById('add-modal-cancel').addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        closeEditModal();
+    });
+}
+
+/**
+ * AI 补全：搜全 chat 中包含 name/aliases 的消息，最多取 20 条最相关的，发给 AI 提取角色档案
+ * 返回 {appearance, personality, relationship, age, gender, _matchCount} 或 null（无匹配）
+ */
+async function aiEnrichNpc(name, aliases = []) {
+    const chat = horaeManager.getChat();
+    if (!chat?.length) return null;
+
+    const keywords = [name, ...aliases].filter(Boolean);
+    const matches = [];
+    for (let i = 1; i < chat.length; i++) {
+        const msg = chat[i];
+        const text = msg?.mes || '';
+        if (!text) continue;
+        const hit = keywords.some(k => text.includes(k));
+        if (hit) matches.push({ idx: i, text: text.slice(0, 1000), is_user: !!msg.is_user });
+    }
+
+    if (matches.length === 0) return null;
+
+    // 优先取最近的 20 条
+    const picked = matches.slice(-20);
+    const matchCount = matches.length;
+
+    const ctxBlock = picked.map(m => `[#${m.idx}${m.is_user ? '|USER' : '|AI'}] ${m.text}`).join('\n---\n');
+    const targetLang = detectEffectiveAiLang(settings);
+    const langName = targetLang === 'zh-CN' ? '简体中文' : targetLang === 'zh-TW' ? '繁體中文'
+                   : targetLang === 'ja' ? '日本語' : targetLang === 'ko' ? '한국어'
+                   : targetLang === 'ru' ? 'Русский' : 'English';
+
+    const prompt = `You are an analyst extracting a character profile from roleplay messages.\n` +
+        `Target character: "${name}"${aliases.length ? ` (also known as: ${aliases.join(', ')})` : ''}\n\n` +
+        `Read the messages below and produce a concise profile. Output STRICT JSON only, no prose, no markdown:\n` +
+        `{"appearance": "...", "personality": "...", "relationship": "...", "age": "...", "gender": "..."}\n\n` +
+        `Rules:\n` +
+        `- Output language: ${langName}\n` +
+        `- Each field 1-2 short sentences max; leave empty string "" if not enough info.\n` +
+        `- "gender" should be one of: 男 / 女 / or a short custom string / "" if unknown.\n` +
+        `- "age" should be a short string like "20" / "约30岁" / "" if unknown.\n` +
+        `- Stay faithful: never invent facts not present in the messages.\n\n` +
+        `=== MESSAGES (${picked.length} of ${matchCount} hits) ===\n${ctxBlock}\n=== END ===`;
+
+    let raw = '';
+    try {
+        raw = await generateForSummary(prompt);
+    } catch (err) {
+        throw new Error(t('toast.aiEnrichApiError', {error: err.message || String(err)}));
+    }
+    if (!raw || !raw.trim()) throw new Error(t('toast.aiEnrichEmpty'));
+
+    // 剥 <think> 块
+    raw = raw.replace(/<think[\s\S]*?<\/think>/gi, '').trim();
+    // 抓第一个 JSON 块
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error(t('toast.aiEnrichParseError'));
+
+    let parsed;
+    try {
+        parsed = JSON.parse(jsonMatch[0]);
+    } catch (_) {
+        throw new Error(t('toast.aiEnrichParseError'));
+    }
+
+    return {
+        appearance: typeof parsed.appearance === 'string' ? parsed.appearance.trim() : '',
+        personality: typeof parsed.personality === 'string' ? parsed.personality.trim() : '',
+        relationship: typeof parsed.relationship === 'string' ? parsed.relationship.trim() : '',
+        age: typeof parsed.age === 'string' ? parsed.age.trim() : '',
+        gender: typeof parsed.gender === 'string' ? parsed.gender.trim() : '',
+        _matchCount: matchCount,
+    };
 }
 
 /**
@@ -3637,7 +3984,14 @@ function openNpcEditModal(npcName) {
                     delete rpg.equipmentConfig.perChar[npcName];
                 }
             }
-            
+
+            // 同步 _rpgConfigs，避免旧名 perChar 被回填
+            const _cfgs = chat[0]?.horae_meta?._rpgConfigs;
+            if (_cfgs?.equipmentConfig?.perChar?.[npcName]) {
+                _cfgs.equipmentConfig.perChar[newName] = _cfgs.equipmentConfig.perChar[npcName];
+                delete _cfgs.equipmentConfig.perChar[npcName];
+            }
+
             // pinnedNpcs 迁移
             if (settings.pinnedNpcs) {
                 const idx = settings.pinnedNpcs.indexOf(npcName);
@@ -7539,7 +7893,7 @@ function refreshAllDisplays() {
 const _GLOBAL_META_KEYS = [
     'autoSummaries', '_deletedNpcs', '_deletedAgendaTexts',
     'locationMemory', 'relationships', 'rpg',
-    '_rpgConfigs', '_pendingScanReview',
+    '_rpgConfigs', '_pendingScanReview', '_userAddedNpcs',
 ];
 
 function _saveGlobalMeta(meta) {
@@ -7553,13 +7907,22 @@ function _saveGlobalMeta(meta) {
 
 function _restoreGlobalMeta(meta, saved) {
     if (!saved || !meta) return;
+    // 空对象/空数组视为缺失（createEmptyMeta 会先放 {} 占位）
+    const isEmptyObj = (v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0;
+    const isEmptyArr = (v) => Array.isArray(v) && v.length === 0;
+    const isMissing = (v) => v === undefined || v === null || isEmptyObj(v) || isEmptyArr(v);
     for (const key of _GLOBAL_META_KEYS) {
         if (saved[key] === undefined) continue;
-        if (meta[key] === undefined) {
+        if (isMissing(meta[key])) {
             meta[key] = saved[key];
-        } else if (key === 'rpg' && typeof saved[key] === 'object' && typeof meta[key] === 'object') {
+            continue;
+        }
+        // rpg / _rpgConfigs 子键级回填
+        if ((key === 'rpg' || key === '_rpgConfigs')
+            && typeof saved[key] === 'object' && !Array.isArray(saved[key])
+            && typeof meta[key] === 'object' && !Array.isArray(meta[key])) {
             for (const rk of Object.keys(saved[key])) {
-                if (meta[key][rk] === undefined) {
+                if (isMissing(meta[key][rk])) {
                     meta[key][rk] = saved[key][rk];
                 }
             }
@@ -7629,9 +7992,12 @@ function _restoreCompressedFlags(meta, saved) {
 }
 
 /**
- * 清理孤儿摘要：如果某个 active 摘要的卡片事件在整个聊天中找不到，
- * 则清除该摘要范围内的 _compressedBy / is_hidden，并将摘要标记为 inactive。
- * 返回清理的摘要数量。
+ * 摘要卡片完整性修复（「只补不杀」策略）：
+ * 旧版：若 active 摘要的 events 卡片不见了，就关闭整个摘要、回退原始时间线
+ *       → 导致玩了几层后摘要莫名「掉」回去
+ * 新版：autoSummaries 是单一可信源；若 events 卡片缺失，就在范围首楼层补回一张虚拟卡片
+ *       → events 数组变化（rebuild/分支/导入）也不会把用户审核保留的摘要弄丢
+ * 返回修复的摘要数量（补回卡片的数量），保持函数名兼容旧调用点。
  */
 function cleanOrphanSummaries() {
     const chat = horaeManager.getChat();
@@ -7639,48 +8005,69 @@ function cleanOrphanSummaries() {
     const sums = chat[0]?.horae_meta?.autoSummaries;
     if (!sums?.length) return 0;
 
-    let cleaned = 0;
+    let restored = 0;
     for (const s of sums) {
         if (!s.active || !s.range || !s.id) continue;
         const summaryId = s.id;
+
         let cardFound = false;
+        let cardMsgIdx = -1;
         for (let i = s.range[0]; i <= s.range[1] && i < chat.length; i++) {
             const evts = chat[i]?.horae_meta?.events;
             if (evts?.some(e => e._summaryId === summaryId && e.isSummary)) {
                 cardFound = true;
+                cardMsgIdx = i;
                 break;
             }
         }
         if (cardFound) continue;
 
-        console.log(`[Horae] 孤儿摘要 ${summaryId}: 卡片事件缺失，清理压缩标记`);
-        s.active = false;
-        for (let i = s.range[0]; i <= s.range[1] && i < chat.length; i++) {
-            if (i === 0 || !chat[i]) continue;
-            if (chat[i].is_hidden) {
-                chat[i].is_hidden = false;
-                const $el = $(`.mes[mesid="${i}"]`);
-                if ($el.length) $el.attr('is_hidden', 'false');
+        // 卡片缺失但摘要仍 active → 在范围首条非 user 楼层补一张虚拟卡片回去
+        const targetIdx = (() => {
+            for (let i = s.range[0]; i <= s.range[1] && i < chat.length; i++) {
+                if (i === 0) continue;
+                if (chat[i] && !chat[i].is_user) return i;
             }
-            const evts = chat[i]?.horae_meta?.events;
-            if (evts) {
-                for (const evt of evts) {
-                    if (evt._compressedBy === summaryId) delete evt._compressedBy;
-                }
+            for (let i = s.range[0]; i <= s.range[1] && i < chat.length; i++) {
+                if (i > 0 && chat[i]) return i;
             }
+            return -1;
+        })();
+
+        if (targetIdx === -1) {
+            console.warn(`[Horae] cleanOrphanSummaries: 摘要 ${summaryId} 范围 [${s.range}] 内无可用消息，跳过补卡`);
+            continue;
         }
-        cleaned++;
+
+        if (!chat[targetIdx].horae_meta) chat[targetIdx].horae_meta = createEmptyMeta();
+        if (!Array.isArray(chat[targetIdx].horae_meta.events)) chat[targetIdx].horae_meta.events = [];
+
+        // 摘要内容真源：summaryText（编辑后落点）→ summary → title → 兜底
+        const cardText = (typeof s.summaryText === 'string' && s.summaryText)
+            ? s.summaryText
+            : (s.summary || s.title || `[${t('label.summary')}]`);
+        chat[targetIdx].horae_meta.events.push({
+            level: s.level || 'major',
+            summary: cardText,
+            timestamp: s.timestamp || chat[targetIdx].horae_meta.timestamp || null,
+            isSummary: true,
+            _summaryId: summaryId,
+            _restored: true,
+        });
+        injectHoraeTagToMessage(targetIdx, chat[targetIdx].horae_meta);
+        console.log(`[Horae] 摘要 ${summaryId} 卡片已在 #${targetIdx} 自动补回`);
+        restored++;
     }
-    if (cleaned > 0) {
-        console.log(`[Horae] cleanOrphanSummaries: 清理了 ${cleaned} 个孤儿摘要`);
+    if (restored > 0) {
+        console.log(`[Horae] cleanOrphanSummaries: 自动补回了 ${restored} 张缺失的摘要卡片`);
     }
-    return cleaned;
+    return restored;
 }
 
 /**
  * 校验并修复摘要范围内消息的 is_hidden 和 _compressedBy 状态，
  * 防止 SillyTavern 重渲染或 saveChat 竞态导致隐藏/压缩标记丢失。
- * 会先清理孤儿摘要，再对仍然有效的摘要补全标记。
+ * 会先「补回」缺失的摘要卡片（不再 deactivate），再对仍然有效的摘要补全标记。
  */
 async function enforceHiddenState() {
     const chat = horaeManager.getChat();
@@ -7688,7 +8075,7 @@ async function enforceHiddenState() {
     const sums = chat[0]?.horae_meta?.autoSummaries;
     if (!sums?.length) return;
 
-    const orphansCleaned = cleanOrphanSummaries();
+    const cardsRestored = cleanOrphanSummaries();
 
     let fixed = 0;
     for (const s of sums) {
@@ -7713,14 +8100,14 @@ async function enforceHiddenState() {
             }
         }
     }
-    if (fixed > 0 || orphansCleaned > 0) {
-        console.log(`[Horae] enforceHiddenState: 修复了 ${fixed} 处摘要状态, 清理了 ${orphansCleaned} 个孤儿`);
+    if (fixed > 0 || cardsRestored > 0) {
+        console.log(`[Horae] enforceHiddenState: 修复 ${fixed} 处隐藏/压缩状态, 自动补回 ${cardsRestored} 张缺失摘要卡片`);
         await getContext().saveChat();
     }
 }
 
 /**
- * 手动一键修复：先清理孤儿摘要，再对仍然有效的活跃摘要
+ * 手动一键修复：先「补回」缺失的摘要卡片，再对仍然有效的活跃摘要
  * 强制恢复 is_hidden + _compressedBy，并同步 DOM 属性。返回修复的条目数。
  */
 function repairAllSummaryStates() {
@@ -7729,7 +8116,7 @@ function repairAllSummaryStates() {
     const sums = chat[0]?.horae_meta?.autoSummaries;
     if (!sums?.length) return 0;
 
-    const orphansCleaned = cleanOrphanSummaries();
+    const cardsRestored = cleanOrphanSummaries();
 
     let fixed = 0;
     for (const s of sums) {
@@ -7754,11 +8141,11 @@ function repairAllSummaryStates() {
             }
         }
     }
-    if (fixed > 0 || orphansCleaned > 0) {
-        console.log(`[Horae] repairAllSummaryStates: 修复了 ${fixed} 处, 清理了 ${orphansCleaned} 个孤儿`);
+    if (fixed > 0 || cardsRestored > 0) {
+        console.log(`[Horae] repairAllSummaryStates: 修复 ${fixed} 处, 自动补回 ${cardsRestored} 张缺失摘要卡片`);
         getContext().saveChat();
     }
-    return fixed + orphansCleaned;
+    return fixed + cardsRestored;
 }
 
 /** 刷新所有已展开的底部面板 */
@@ -11105,6 +11492,10 @@ function initSettingsEvents() {
     $('#horae-btn-items-delete').on('click', deleteSelectedItems);
     $('#horae-btn-items-cancel-select').on('click', exitMultiSelectMode);
     
+    $('#horae-btn-npc-add').on('click', (e) => {
+        e.stopPropagation();
+        openNpcAddModal();
+    });
     $('#horae-btn-npc-multiselect').on('click', () => {
         npcMultiSelectMode ? exitNpcMultiSelect() : enterNpcMultiSelect();
     });
@@ -11719,6 +12110,7 @@ function initSettingsEvents() {
 
     $('#horae-btn-fetch-embed-models').on('click', fetchEmbeddingModels);
     $('#horae-btn-fetch-rerank-models').on('click', fetchRerankModels);
+    $('#horae-btn-test-vector-api').on('click', testVectorApiConnection);
 
     $('#horae-setting-vector-rerank-url').on('change', function() {
         settings.vectorRerankUrl = this.value.trim();
@@ -12102,7 +12494,8 @@ async function _initVectorModel() {
         showToast(t('toast.vectorModelLoaded', {name: displayName}), 'success');
     } catch (err) {
         console.error('[Horae] vector model load failed:', err);
-        showToast(t('toast.vectorModelFailed', {error: err.message}), 'error');
+        const friendly = settings.vectorSource === 'api' ? _vectorErrorHint(err) : (err?.message || String(err));
+        showToast(t('toast.vectorModelFailed', {error: friendly}), 'error');
     } finally {
         if (progressEl) progressEl.style.display = 'none';
         _updateVectorStatus();
@@ -12659,6 +13052,70 @@ async function fetchEmbeddingModels() {
     }
 }
 
+/** 测试向量 API 连线：发一条 embed 'ping' 验证 URL/Key/Model 三件套并报告维度 */
+async function testVectorApiConnection() {
+    const btn = document.getElementById('horae-btn-test-vector-api');
+    const origHtml = btn?.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...'; }
+    try {
+        const url = ($('#horae-setting-vector-api-url').val() || settings.vectorApiUrl || '').trim();
+        const key = ($('#horae-setting-vector-api-key').val() || settings.vectorApiKey || '').trim();
+        const model = ($('#horae-setting-vector-api-model').val() || settings.vectorApiModel || '').trim();
+        if (!url || !key || !model) {
+            showToast(t('toast.vectorApiRequired'), 'warning');
+            return;
+        }
+        const cleanUrl = url.replace(/\/+$/, '');
+        const endpoint = `${cleanUrl}/embeddings`;
+        let resp;
+        try {
+            resp = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${key}`,
+                },
+                body: JSON.stringify({ model, input: ['ping'] }),
+            });
+        } catch (err) {
+            const wrapped = new Error(err?.message || 'Network error');
+            wrapped.code = (err instanceof TypeError) ? 'NETWORK'
+                : /timeout|timed out/i.test(err?.message || '') ? 'TIMEOUT'
+                : /socket hang up|ECONNRESET|ECONNREFUSED/i.test(err?.message || '') ? 'NETWORK'
+                : 'UNKNOWN';
+            throw wrapped;
+        }
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            const wrapped = new Error(`HTTP ${resp.status}`);
+            wrapped.status = resp.status;
+            wrapped.body = errText.slice(0, 500);
+            throw wrapped;
+        }
+        let json;
+        try {
+            json = await resp.json();
+        } catch (_) {
+            const wrapped = new Error('Invalid JSON');
+            wrapped.code = 'FORMAT';
+            throw wrapped;
+        }
+        const vec = json?.data?.[0]?.embedding;
+        if (!Array.isArray(vec) || vec.length === 0) {
+            const wrapped = new Error('Missing embedding data');
+            wrapped.code = 'FORMAT';
+            throw wrapped;
+        }
+        showToast(t('toast.vectorTestSuccess', {dim: vec.length}), 'success');
+    } catch (err) {
+        const friendly = _vectorErrorHint(err);
+        showToast(t('toast.vectorTestFailed', {error: friendly}), 'error');
+        console.error('[Horae] vector API test failed:', err);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = origHtml || '<i class="fa-solid fa-plug-circle-check"></i>'; }
+    }
+}
+
 /** 拉取 Rerank 模型列表并填充 <select> */
 async function fetchRerankModels() {
     const btn = document.getElementById('horae-btn-fetch-rerank-models');
@@ -12855,6 +13312,30 @@ function _httpStatusHint(status) {
     return fallback[status] || '';
 }
 
+/**
+ * 向量 API 错误友好提示：根据 err.status 或 err.code 给出 i18n 人话
+ * - status 数字 → 走 toast.vectorHint{status}
+ * - code: NETWORK/TIMEOUT/FORMAT/UNKNOWN → 走 toast.vectorHint{Code}
+ * 优先级：status > code > 原始 message
+ */
+function _vectorErrorHint(err) {
+    if (!err) return '';
+    if (err.status) {
+        const key = `toast.vectorHint${err.status}`;
+        const translated = t(key);
+        if (translated && translated !== key) return translated;
+        const generic = _httpStatusHint(err.status);
+        if (generic) return generic;
+        return `HTTP ${err.status}${err.body ? `: ${err.body.slice(0, 120)}` : ''}`;
+    }
+    if (err.code) {
+        const codeKey = `toast.vectorHint${err.code.charAt(0).toUpperCase()}${err.code.slice(1).toLowerCase()}`;
+        const translated = t(codeKey);
+        if (translated && translated !== codeKey) return translated;
+    }
+    return err.message || String(err);
+}
+
 /** 直接请求API端点，完全独立于酒馆主连接，支持真并行 */
 async function generateWithDirectApi(prompt) {
     const _model = settings.autoSummaryModel.trim();
@@ -13037,11 +13518,11 @@ async function checkAutoSummary() {
         const totalMsgs = chat.length;
         const cutoff = Math.max(1, totalMsgs - keepRecent);
         
-        // 收集已被活跃摘要覆盖的消息索引（无论 is_hidden 是否生效都排除）
+        // 收集已被摘要覆盖的消息索引（含展开状态，避免重复摘要）
         const summarizedIndices = new Set();
         const existingSums = chat[0]?.horae_meta?.autoSummaries || [];
         for (const s of existingSums) {
-            if (!s.active || !s.range) continue;
+            if (!s.range) continue;
             for (let r = s.range[0]; r <= s.range[1]; r++) {
                 summarizedIndices.add(r);
             }
@@ -13064,6 +13545,12 @@ async function checkAutoSummary() {
             if (chat[i]?.horae_meta?._skipHorae) continue;
             if (manualSummaryMsgIndices.has(i)) continue;
             if (!chat[i]?.is_user && isEmptyOrCodeLayer(chat[i]?.mes)) continue;
+            // 跳过事件全部已被压缩的消息
+            const _evts = chat[i]?.horae_meta?.events;
+            if (_evts?.length) {
+                const _hasUncompressed = _evts.some(e => e && !e.isSummary && !e._compressedBy);
+                if (!_hasUncompressed) continue;
+            }
             bufferMsgIndices.push(i);
             if (bufferMode === 'tokens') {
                 bufferTokens += estimateTokens(chat[i]?.mes || '');
@@ -14638,15 +15125,21 @@ function _importAsInitialState(importObj, chat) {
         }
     }
 
-    // 将 rpg 内嵌的 config 也同步到 _rpgConfigs
+    // 将 rpg 内嵌的 config 回填到 _rpgConfigs（仅当 _rpgConfigs 缺失时）
     if (target.rpg) {
         if (!target._rpgConfigs) target._rpgConfigs = {};
-        if (target.rpg.reputationConfig) target._rpgConfigs.reputationConfig = target.rpg.reputationConfig;
-        if (target.rpg.equipmentConfig) target._rpgConfigs.equipmentConfig = target.rpg.equipmentConfig;
-        if (target.rpg.currencyConfig) target._rpgConfigs.currencyConfig = target.rpg.currencyConfig;
-        if (target.rpg._deletedSkills) target._rpgConfigs._deletedSkills = target.rpg._deletedSkills;
-        if (target.rpg.strongholds) target._rpgConfigs.strongholds = target.rpg.strongholds;
-        if (target.rpg._deletedStrongholds) target._rpgConfigs._deletedStrongholds = target.rpg._deletedStrongholds;
+        if (target.rpg.reputationConfig && !target._rpgConfigs.reputationConfig)
+            target._rpgConfigs.reputationConfig = target.rpg.reputationConfig;
+        if (target.rpg.equipmentConfig && !target._rpgConfigs.equipmentConfig)
+            target._rpgConfigs.equipmentConfig = target.rpg.equipmentConfig;
+        if (target.rpg.currencyConfig && !target._rpgConfigs.currencyConfig)
+            target._rpgConfigs.currencyConfig = target.rpg.currencyConfig;
+        if (target.rpg._deletedSkills && !target._rpgConfigs._deletedSkills)
+            target._rpgConfigs._deletedSkills = target.rpg._deletedSkills;
+        if (target.rpg.strongholds && !target._rpgConfigs.strongholds)
+            target._rpgConfigs.strongholds = target.rpg.strongholds;
+        if (target.rpg._deletedStrongholds && !target._rpgConfigs._deletedStrongholds)
+            target._rpgConfigs._deletedStrongholds = target.rpg._deletedStrongholds;
     }
     
     // 自定义表格
@@ -15074,6 +15567,38 @@ async function onChatChanged() {
                 if (_rpg._deletedStrongholds && !_m._rpgConfigs._deletedStrongholds)
                     _m._rpgConfigs._deletedStrongholds = _rpg._deletedStrongholds;
             }
+        }
+
+        // ── 迁移旧数据：events 中的摘要卡片回流到 autoSummaries.summaryText ──
+        // 旧版只存在 events 卡片中，没写到 autoSummaries[i].summaryText
+        // → 这里一次性补回，让 autoSummaries 成为单一可信源
+        try {
+            const _mig = _mc?.[0]?.horae_meta;
+            if (_mig?.autoSummaries?.length && _mc?.length) {
+                const summaryById = new Map();
+                for (const s of _mig.autoSummaries) {
+                    if (s?.id) summaryById.set(s.id, s);
+                }
+                let backfilled = 0;
+                for (let i = 1; i < _mc.length; i++) {
+                    const evts = _mc[i]?.horae_meta?.events;
+                    if (!evts?.length) continue;
+                    for (const evt of evts) {
+                        if (!evt?.isSummary || !evt._summaryId) continue;
+                        const s = summaryById.get(evt._summaryId);
+                        if (!s) continue;
+                        if (!s.summaryText && evt.summary) {
+                            s.summaryText = evt.summary;
+                            backfilled++;
+                        }
+                    }
+                }
+                if (backfilled > 0) {
+                    console.log(`[Horae] 摘要迁移：从 events 回填 ${backfilled} 条 summaryText 到 autoSummaries`);
+                }
+            }
+        } catch (e) {
+            console.warn('[Horae] 摘要迁移失败：', e);
         }
 
         _rebuildGlobalDataForCurrentChat();
