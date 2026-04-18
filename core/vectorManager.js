@@ -562,6 +562,16 @@ export class VectorManager {
         const topK = settings.vectorTopK || 5;
         const threshold = settings.vectorThreshold ?? 0.72;
 
+        // 启用 rerank 时，embedding 阶段宽松召回（低阈值 + 多候选），
+        // 让真正相关但 embedding 分低的楼层也有机会被 rerank 提到前面
+        const useRerank = !!(settings.vectorRerankEnabled && settings.vectorRerankModel);
+        const recallTopK = useRerank
+            ? Math.max(topK, settings.vectorRerankCandidates || topK * 5)
+            : topK;
+        const recallThreshold = useRerank
+            ? (settings.vectorRerankRecallThreshold ?? 0.3)
+            : threshold;
+
         let rawUserMsg = '';
         for (let i = chat.length - 1; i >= 0; i--) {
             if (chat[i].is_user) { rawUserMsg = chat[i].mes || ''; break; }
@@ -578,6 +588,7 @@ export class VectorManager {
 
         const pureMode = !!settings.vectorPureMode;
         if (pureMode) console.log('[Horae Vector] 纯向量模式已启用，跳过关键词启发式');
+        if (useRerank) console.log(`[Horae Vector] Rerank 模式：embedding 召回阈值=${recallThreshold} / 候选=${recallTopK}`);
 
         const structuredResults = this._structuredQuery(userQuery, chat, state, excludeIndices, topK, pureMode);
         console.log(`[Horae Vector] 结构化查询: ${structuredResults.length} 条命中`);
@@ -585,7 +596,7 @@ export class VectorManager {
             merged.set(r.messageIndex, r);
         }
 
-        const hybridResults = await this._hybridSearch(userQuery, state, horaeManager, skipLast, settings, excludeIndices, topK, threshold, pureMode);
+        const hybridResults = await this._hybridSearch(userQuery, state, horaeManager, skipLast, settings, excludeIndices, recallTopK, recallThreshold, pureMode);
         console.log(`[Horae Vector] 向量混合搜索: ${hybridResults.length} 条命中`);
         for (const r of hybridResults) {
             if (!merged.has(r.messageIndex)) {
@@ -632,8 +643,8 @@ export class VectorManager {
         results.sort((a, b) => b.similarity - a.similarity);
 
         // Rerank：对候选结果做二次精排
-        if (settings.vectorRerankEnabled && settings.vectorRerankModel && results.length > 1) {
-            const rerankCandidates = results.slice(0, topK * 3);
+        if (useRerank && results.length > 1) {
+            const rerankCandidates = results.slice(0, recallTopK);
             const rerankQuery = userQuery || this.buildStateQuery(state, null);
             if (rerankQuery) {
                 try {
@@ -646,17 +657,20 @@ export class VectorManager {
                         }
                         return r.document;
                     });
-                    console.log(`[Horae Vector] Rerank 模式: ${useFullText ? '全文精排' : '摘要排序'}`);
+                    console.log(`[Horae Vector] Rerank 输入: ${rerankCandidates.length} 条候选 / 模式=${useFullText ? '全文精排' : '摘要排序'}`);
 
                     const reranked = await this._rerank(
                         rerankQuery,
                         rerankDocs,
-                        topK,
+                        rerankCandidates.length,
                         settings
                     );
                     if (reranked && reranked.length > 0) {
-                        console.log(`[Horae Vector] Rerank 完成: ${reranked.length} 条`);
-                        results = reranked.map(rr => {
+                        const minScore = settings.vectorRerankMinScore ?? 0.5;
+                        const passed = reranked.filter(rr => (rr.relevance_score ?? 0) >= minScore);
+                        const dropped = reranked.length - passed.length;
+                        console.log(`[Horae Vector] Rerank 完成: ${reranked.length} 条 → 阈值(${minScore})过滤后 ${passed.length} 条 (丢弃 ${dropped})`);
+                        results = passed.map(rr => {
                             const original = rerankCandidates[rr.index];
                             return {
                                 ...original,

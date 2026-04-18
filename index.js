@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.11.14
+ * 版本: 1.11.15
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -21,7 +21,7 @@ import { t, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLan
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.11.14';
+const VERSION = '1.11.15';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -250,6 +250,9 @@ const DEFAULT_SETTINGS = {
     vectorRerankModel: '',             // Rerank 模型名称
     vectorRerankUrl: '',               // Rerank API 地址（留空则复用 embedding 地址）
     vectorRerankKey: '',               // Rerank API 密钥（留空则复用 embedding 密钥）
+    vectorRerankCandidates: 25,        // Rerank 候选条数（开 rerank 时 embedding 召回上限）
+    vectorRerankRecallThreshold: 0.3,  // Rerank 模式下的 embedding 召回阈值（远低于 vectorThreshold）
+    vectorRerankMinScore: 0.5,         // Rerank 后的相关性最低分（低于此值丢弃）
     vectorTopK: 5,
     vectorThreshold: 0.72,
     vectorFullTextCount: 3,
@@ -1351,6 +1354,11 @@ async function setMessagesHidden(chat, indices, hidden) {
 /** 从摘要条目中取回所有关联的消息索引 */
 function getSummaryMsgIndices(entry) {
     if (!entry) return [];
+    if (Array.isArray(entry.coveredIndices) && entry.coveredIndices.length) {
+        const set = new Set(entry.coveredIndices);
+        for (const e of (entry.originalEvents || [])) set.add(e.msgIdx);
+        return [...set];
+    }
     const fromEvents = (entry.originalEvents || []).map(e => e.msgIdx);
     if (entry.range) {
         for (let i = entry.range[0]; i <= entry.range[1]; i++) fromEvents.push(i);
@@ -2108,14 +2116,27 @@ async function compressSelectedTimelineEvents() {
         const date = meta.timestamp?.story_date || '?';
         const time = meta.timestamp?.story_time || '';
         const isSummary = evt.isSummary || evt.level === '摘要';
-        if (isSummary && evt._summaryId) _selectedSummaryIds.add(evt._summaryId);
+        // _summaryId 缺失时通过 msgIdx + summaryText 反查（兼容旧版数据丢字段的场景）
+        let _summaryId = evt._summaryId || null;
+        if (isSummary && !_summaryId) {
+            const sig = (evt.summary || '').slice(0, 40);
+            const matched = _allSummaries.find(s => {
+                const inRange = s.range && msgIdx >= s.range[0] && msgIdx <= s.range[1];
+                if (!inRange) return false;
+                if (!sig) return true;
+                return s.summaryText === evt.summary
+                    || (s.summaryText || '').slice(0, 40) === sig;
+            });
+            if (matched) _summaryId = matched.id;
+        }
+        if (isSummary && _summaryId) _selectedSummaryIds.add(_summaryId);
         events.push({
             key, msgIdx, evtIdx,
             date, time,
             level: evt.level || '一般',
             summary: evt.summary || '',
             isSummary,
-            _summaryId: evt._summaryId || null
+            _summaryId
         });
     }
     
@@ -2278,9 +2299,12 @@ async function compressSelectedTimelineEvents() {
         const originalEvents = [...inheritedOriginal, ...ownOriginal];
 
         const summaryId = `cs_${Date.now()}`;
+        const coveredIndices = [];
+        for (let i = rangeMin; i <= rangeMax; i++) coveredIndices.push(i);
         const summaryEntry = {
             id: summaryId,
             range: [rangeMin, rangeMax],
+            coveredIndices,
             summaryText,
             originalEvents,
             active: true,
@@ -12122,6 +12146,27 @@ function initSettingsEvents() {
         saveSettings();
     });
 
+    $('#horae-setting-vector-rerank-candidates').on('change', function() {
+        const v = parseInt(this.value, 10);
+        settings.vectorRerankCandidates = (Number.isFinite(v) && v >= 5) ? v : 25;
+        this.value = settings.vectorRerankCandidates;
+        saveSettings();
+    });
+
+    $('#horae-setting-vector-rerank-recall-threshold').on('change', function() {
+        const v = parseFloat(this.value);
+        settings.vectorRerankRecallThreshold = (Number.isFinite(v) && v >= 0 && v <= 0.8) ? v : 0.3;
+        this.value = settings.vectorRerankRecallThreshold;
+        saveSettings();
+    });
+
+    $('#horae-setting-vector-rerank-min-score').on('change', function() {
+        const v = parseFloat(this.value);
+        settings.vectorRerankMinScore = (Number.isFinite(v) && v >= 0 && v <= 1) ? v : 0.5;
+        this.value = settings.vectorRerankMinScore;
+        saveSettings();
+    });
+
     $('#horae-setting-vector-topk').on('change', function() {
         settings.vectorTopK = parseInt(this.value) || 5;
         saveSettings();
@@ -12354,6 +12399,9 @@ function syncSettingsToUI() {
     }
     $('#horae-setting-vector-rerank-url').val(settings.vectorRerankUrl || '');
     $('#horae-setting-vector-rerank-key').val(settings.vectorRerankKey || '');
+    $('#horae-setting-vector-rerank-candidates').val(settings.vectorRerankCandidates ?? 25);
+    $('#horae-setting-vector-rerank-recall-threshold').val(settings.vectorRerankRecallThreshold ?? 0.3);
+    $('#horae-setting-vector-rerank-min-score').val(settings.vectorRerankMinScore ?? 0.5);
     $('#horae-setting-vector-topk').val(settings.vectorTopK || 5);
     $('#horae-setting-vector-threshold').val(settings.vectorThreshold || 0.72);
     $('#horae-setting-vector-fulltext-count').val(settings.vectorFullTextCount ?? 3);
@@ -13519,12 +13567,14 @@ async function checkAutoSummary() {
         const cutoff = Math.max(1, totalMsgs - keepRecent);
         
         // 收集已被摘要覆盖的消息索引（含展开状态，避免重复摘要）
+        // 优先用 coveredIndices（实际压缩集合），旧 entry 才回退到 range 全展开
         const summarizedIndices = new Set();
         const existingSums = chat[0]?.horae_meta?.autoSummaries || [];
         for (const s of existingSums) {
-            if (!s.range) continue;
-            for (let r = s.range[0]; r <= s.range[1]; r++) {
-                summarizedIndices.add(r);
+            if (Array.isArray(s.coveredIndices) && s.coveredIndices.length) {
+                for (const r of s.coveredIndices) summarizedIndices.add(r);
+            } else if (s.range) {
+                for (let r = s.range[0]; r <= s.range[1]; r++) summarizedIndices.add(r);
             }
         }
         
@@ -13689,7 +13739,7 @@ async function checkAutoSummary() {
             timestamp: chat[e.msgIdx]?.horae_meta?.timestamp
         }));
         
-        // 完整隐藏范围（包含中间所有 USER 消息）
+        // range 显示用，coveredIndices 才是判定"已摘要"的权威集合
         const hideMin = msgIndices[0];
         const hideMax = msgIndices[msgIndices.length - 1];
 
@@ -13697,6 +13747,7 @@ async function checkAutoSummary() {
         firstMsg.horae_meta.autoSummaries.push({
             id: summaryId,
             range: [hideMin, hideMax],
+            coveredIndices: [...msgIndices],
             summaryText,
             originalEvents,
             active: true,
@@ -13712,8 +13763,8 @@ async function checkAutoSummary() {
             }
         }
         
-        // 插入摘要事件卡片：优先放在有事件的消息上，否则放在范围首条
-        const targetIdx = bufferEvents.length > 0 ? bufferEvents[0].msgIdx : msgIndices[0];
+        // 卡片始终放到 range 起点，避免视觉上"跳一层"
+        const targetIdx = msgIndices[0];
         if (!chat[targetIdx].horae_meta) chat[targetIdx].horae_meta = createEmptyMeta();
         const targetMeta = chat[targetIdx].horae_meta;
         if (!targetMeta.events) targetMeta.events = [];
@@ -13725,10 +13776,8 @@ async function checkAutoSummary() {
             _summaryId: summaryId
         });
         
-        // /hide 整个范围内的消息楼层
-        const fullRangeIndices = [];
-        for (let i = hideMin; i <= hideMax; i++) fullRangeIndices.push(i);
-        await setMessagesHidden(chat, fullRangeIndices, true);
+        // 只 hide 实际进入 batch 的消息，避免误盖到其它 entry 范围内的消息
+        await setMessagesHidden(chat, [...msgIndices], true);
         
         await context.saveChat();
         updateTimelineDisplay();

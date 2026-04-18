@@ -10,7 +10,7 @@
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">v1.11.14</span>
+            <span class="horae-version">v1.11.15</span>
         </div>
         
         <!-- 标签页导航 -->
@@ -1088,6 +1088,27 @@
                                             <strong>请勿开启</strong>，全文会被截断，效果反而更差。
                                         </span>
                                     </div>
+                                    <div class="horae-setting-item" style="margin-top: 4px;">
+                                        <label data-i18n="vector.rerankCandidates">
+                                            Rerank 候选条数
+                                            <input type="number" id="horae-setting-vector-rerank-candidates" min="5" max="100" value="25">
+                                        </label>
+                                        <span class="horae-setting-sub-hint" data-i18n="vector.rerankCandidatesHint">开启 Rerank 时，先用宽松阈值召回这么多候选，再交给 Rerank 精排。建议 20~40。</span>
+                                    </div>
+                                    <div class="horae-setting-item">
+                                        <label data-i18n="vector.rerankRecallThreshold">
+                                            Rerank 召回阈值
+                                            <input type="number" id="horae-setting-vector-rerank-recall-threshold" min="0" max="0.8" step="0.05" value="0.3">
+                                        </label>
+                                        <span class="horae-setting-sub-hint" data-i18n="vector.rerankRecallThresholdHint">开启 Rerank 时使用的 embedding 召回阈值，远低于上方"最低相似度阈值"。让真正相关但 embedding 分低的楼层也有机会被精排。</span>
+                                    </div>
+                                    <div class="horae-setting-item">
+                                        <label data-i18n="vector.rerankMinScore">
+                                            Rerank 最低分
+                                            <input type="number" id="horae-setting-vector-rerank-min-score" min="0" max="1" step="0.05" value="0.5">
+                                        </label>
+                                        <span class="horae-setting-sub-hint" data-i18n="vector.rerankMinScoreHint">Rerank 给出的相关性分数低于此值的结果会被丢弃，不进入上下文。建议 0.4~0.6。</span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="horae-setting-item">
@@ -1355,7 +1376,7 @@
                 </div>
                 
                 <div class="horae-about">
-                    <p>Horae v1.11.14 | 作者: SenriYuki</p>
+                    <p>Horae v1.11.15 | 作者: SenriYuki</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>
