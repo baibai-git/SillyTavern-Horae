@@ -719,24 +719,22 @@ export class VectorManager {
                 }
                 if (fallbackText) {
                     console.log(`[Horae Vector] 首次召回无效，Fallback 用上一楼内容重试: "${fallbackText.substring(0, 60)}..."`);
-                    const fbHybrid = await this._hybridSearch(fallbackText, state, horaeManager, skipLast, settings, excludeIndices, recallTopK, recallThreshold, pureMode);
-                    let fbResults = Array.from(fbHybrid);
+                    let fbResults = await this.search(fallbackText, recallTopK, recallThreshold, excludeIndices, pureMode);
                     fbResults.sort((a, b) => b.similarity - a.similarity);
 
                     if (useRerank && fbResults.length > 1) {
-                        const fbQuery = fallbackText;
                         try {
                             const useFullText = !!settings.vectorRerankFullText;
                             const _stripTags = settings.vectorStripTags || '';
-                            const fbDocs = fbResults.slice(0, recallTopK).map(r => {
+                            const fbCandidates = fbResults.slice(0, recallTopK);
+                            const fbDocs = fbCandidates.map(r => {
                                 if (useFullText) {
                                     const ft = this._extractCleanText(chat[r.messageIndex]?.mes, _stripTags);
                                     return ft || r.document;
                                 }
                                 return r.document;
                             });
-                            const fbCandidates = fbResults.slice(0, recallTopK);
-                            const reranked = await this._rerank(fbQuery, fbDocs, fbCandidates.length, settings);
+                            const reranked = await this._rerank(fallbackText, fbDocs, fbCandidates.length, settings);
                             if (reranked?.length) {
                                 const minScore = settings.vectorRerankMinScore ?? 0.5;
                                 const passed = reranked.filter(rr => (rr.relevance_score ?? 0) >= minScore);
@@ -744,20 +742,21 @@ export class VectorManager {
                                 fbResults = passed.map(rr => ({
                                     ...fbCandidates[rr.index],
                                     similarity: rr.relevance_score,
-                                    source: fbCandidates[rr.index].source + '+fallback+rerank',
+                                    source: 'fallback+rerank',
                                 }));
                             }
                         } catch (err) {
                             console.warn('[Horae Vector] Fallback Rerank 失败:', err.message);
                         }
                     } else {
-                        // 非 rerank 模式：用 fbMinScore 过滤
                         fbResults = fbResults.filter(r => r.similarity >= fbMinScore);
                     }
                     fbResults = fbResults.slice(0, topK);
                     if (fbResults.length > 0) {
                         console.log(`[Horae Vector] Fallback 召回 ${fbResults.length} 条`);
-                        for (const r of fbResults) r.source = (r.source || '') + '+fallback';
+                        for (const r of fbResults) {
+                            if (!r.source?.includes('fallback')) r.source = (r.source || '') + '+fallback';
+                        }
                         results = fbResults;
                     }
                 }
@@ -1291,8 +1290,15 @@ export class VectorManager {
     async _hybridSearch(userQuery, state, horaeManager, skipLast, settings, excludeIndices, topK, threshold, pureMode = false) {
         if (!this.isReady || this.vectors.size === 0) return [];
 
-        const lastIdx = Math.max(0, horaeManager.getChat().length - 1 - skipLast);
-        const lastMeta = horaeManager.getMessageMeta(lastIdx);
+        // 跳过 user 消息，取最近一条 AI 消息的完整 meta（含 events）
+        const chat = horaeManager.getChat();
+        let lastMeta = null;
+        for (let i = chat.length - 1 - skipLast; i >= 0; i--) {
+            if (!chat[i].is_user && chat[i].horae_meta) {
+                lastMeta = chat[i].horae_meta;
+                break;
+            }
+        }
         const stateQuery = this.buildStateQuery(state, lastMeta);
 
         const merged = new Map();
