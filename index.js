@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.11.17
+ * 版本: 1.11.18
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -21,7 +21,7 @@ import { t, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLan
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.11.17';
+const VERSION = '1.11.18';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -15558,7 +15558,18 @@ async function onPromptReady(eventData) {
         if (position === 0) {
             eventData.chat.push({ role: 'system', content: combinedPrompt });
         } else {
-            eventData.chat.splice(-position, 0, { role: 'system', content: combinedPrompt });
+            let count = 0;
+            let insertIdx = eventData.chat.length;
+            for (let i = eventData.chat.length - 1; i >= 0; i--) {
+                if (eventData.chat[i].role === 'user' || eventData.chat[i].role === 'assistant') {
+                    count++;
+                    if (count >= position) {
+                        insertIdx = i;
+                        break;
+                    }
+                }
+            }
+            eventData.chat.splice(insertIdx, 0, { role: 'system', content: combinedPrompt });
         }
         
         console.log(`[Horae] 已注入上下文，位置: -${position}${skipLast ? '（已跳过末尾消息）' : ''}${recallPrompt ? '（含向量召回）' : ''}`);
