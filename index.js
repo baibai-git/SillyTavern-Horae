@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.11.15
+ * 版本: 1.11.16
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -21,7 +21,7 @@ import { t, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLan
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.11.15';
+const VERSION = '1.11.16';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -253,6 +253,8 @@ const DEFAULT_SETTINGS = {
     vectorRerankCandidates: 25,        // Rerank 候选条数（开 rerank 时 embedding 召回上限）
     vectorRerankRecallThreshold: 0.3,  // Rerank 模式下的 embedding 召回阈值（远低于 vectorThreshold）
     vectorRerankMinScore: 0.5,         // Rerank 后的相关性最低分（低于此值丢弃）
+    vectorFallbackEnabled: false,      // 首次召回为空时用上一楼 AI 回复内容重试
+    vectorFallbackMinScore: 0.5,       // 非 Rerank 模式下 fallback 触发阈值（最高分低于此值即 fallback）
     vectorTopK: 5,
     vectorThreshold: 0.72,
     vectorFullTextCount: 3,
@@ -12120,6 +12122,8 @@ function initSettingsEvents() {
         settings.vectorRerankEnabled = this.checked;
         saveSettings();
         $('#horae-vector-rerank-options').toggle(this.checked);
+        // 开了 rerank 时 fallback 阈值面板不需要显示（由 rerank minScore 决定）
+        $('#horae-vector-fallback-options').toggle(!!settings.vectorFallbackEnabled && !this.checked);
     });
 
     $('#horae-setting-vector-rerank-fulltext').on('change', function() {
@@ -12164,6 +12168,19 @@ function initSettingsEvents() {
         const v = parseFloat(this.value);
         settings.vectorRerankMinScore = (Number.isFinite(v) && v >= 0 && v <= 1) ? v : 0.5;
         this.value = settings.vectorRerankMinScore;
+        saveSettings();
+    });
+
+    $('#horae-setting-vector-fallback-enabled').on('change', function() {
+        settings.vectorFallbackEnabled = this.checked;
+        saveSettings();
+        $('#horae-vector-fallback-options').toggle(this.checked && !settings.vectorRerankEnabled);
+    });
+
+    $('#horae-setting-vector-fallback-min-score').on('change', function() {
+        const v = parseFloat(this.value);
+        settings.vectorFallbackMinScore = (Number.isFinite(v) && v >= 0 && v <= 1) ? v : 0.5;
+        this.value = settings.vectorFallbackMinScore;
         saveSettings();
     });
 
@@ -12402,6 +12419,9 @@ function syncSettingsToUI() {
     $('#horae-setting-vector-rerank-candidates').val(settings.vectorRerankCandidates ?? 25);
     $('#horae-setting-vector-rerank-recall-threshold').val(settings.vectorRerankRecallThreshold ?? 0.3);
     $('#horae-setting-vector-rerank-min-score').val(settings.vectorRerankMinScore ?? 0.5);
+    $('#horae-setting-vector-fallback-enabled').prop('checked', !!settings.vectorFallbackEnabled);
+    $('#horae-vector-fallback-options').toggle(!!settings.vectorFallbackEnabled && !settings.vectorRerankEnabled);
+    $('#horae-setting-vector-fallback-min-score').val(settings.vectorFallbackMinScore ?? 0.5);
     $('#horae-setting-vector-topk').val(settings.vectorTopK || 5);
     $('#horae-setting-vector-threshold').val(settings.vectorThreshold || 0.72);
     $('#horae-setting-vector-fulltext-count').val(settings.vectorFullTextCount ?? 3);
@@ -14853,7 +14873,7 @@ function showAIScanConfigDialog(targetCount) {
         modal.innerHTML = `
             <div class="horae-modal-content" style="max-width: 420px;">
                 <div class="horae-modal-header">
-                    <span>AI 智能摘要</span>
+                    <span>${t('settings.aiSmartSummary')}</span>
                 </div>
                 <div class="horae-modal-body" style="padding: 16px;">
                     <p style="margin: 0 0 12px; color: var(--horae-text-muted); font-size: 13px;">

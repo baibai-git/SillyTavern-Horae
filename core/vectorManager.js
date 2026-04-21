@@ -687,6 +687,83 @@ export class VectorManager {
 
         results = results.slice(0, topK);
 
+        // Fallback：首次召回无效时用上一楼 AI 回复重跑一次
+        if (settings.vectorFallbackEnabled) {
+            // 开 rerank 看过滤后是否为空；空集 或 最高分太低
+            const bestScore = results.length ? Math.max(...results.map(r => r.similarity)) : 0;
+            const fbMinScore = settings.vectorFallbackMinScore ?? 0.5;
+            const needFallback = useRerank
+                ? results.length === 0
+                : (results.length === 0 || bestScore < fbMinScore);
+
+            if (needFallback) {
+                // 取上一楼 AI 回复
+                let fallbackText = '';
+                for (let i = chat.length - 1; i >= 0; i--) {
+                    if (!chat[i].is_user && chat[i].mes) {
+                        const meta = chat[i].horae_meta;
+                        // 优先用 horae_meta 事件摘要
+                        const evts = meta?.events || (meta?.event ? [meta.event] : []);
+                        if (evts.length) {
+                            fallbackText = evts
+                                .filter(e => e && !e.isSummary)
+                                .map(e => e.summary || '')
+                                .filter(Boolean)
+                                .join('；');
+                        }
+                        if (!fallbackText) {
+                            fallbackText = this.cleanUserMessage(chat[i].mes);
+                        }
+                        break;
+                    }
+                }
+                if (fallbackText) {
+                    console.log(`[Horae Vector] 首次召回无效，Fallback 用上一楼内容重试: "${fallbackText.substring(0, 60)}..."`);
+                    const fbHybrid = await this._hybridSearch(fallbackText, state, horaeManager, skipLast, settings, excludeIndices, recallTopK, recallThreshold, pureMode);
+                    let fbResults = Array.from(fbHybrid);
+                    fbResults.sort((a, b) => b.similarity - a.similarity);
+
+                    if (useRerank && fbResults.length > 1) {
+                        const fbQuery = fallbackText;
+                        try {
+                            const useFullText = !!settings.vectorRerankFullText;
+                            const _stripTags = settings.vectorStripTags || '';
+                            const fbDocs = fbResults.slice(0, recallTopK).map(r => {
+                                if (useFullText) {
+                                    const ft = this._extractCleanText(chat[r.messageIndex]?.mes, _stripTags);
+                                    return ft || r.document;
+                                }
+                                return r.document;
+                            });
+                            const fbCandidates = fbResults.slice(0, recallTopK);
+                            const reranked = await this._rerank(fbQuery, fbDocs, fbCandidates.length, settings);
+                            if (reranked?.length) {
+                                const minScore = settings.vectorRerankMinScore ?? 0.5;
+                                const passed = reranked.filter(rr => (rr.relevance_score ?? 0) >= minScore);
+                                console.log(`[Horae Vector] Fallback Rerank: ${reranked.length} → ${passed.length} 条通过`);
+                                fbResults = passed.map(rr => ({
+                                    ...fbCandidates[rr.index],
+                                    similarity: rr.relevance_score,
+                                    source: fbCandidates[rr.index].source + '+fallback+rerank',
+                                }));
+                            }
+                        } catch (err) {
+                            console.warn('[Horae Vector] Fallback Rerank 失败:', err.message);
+                        }
+                    } else {
+                        // 非 rerank 模式：用 fbMinScore 过滤
+                        fbResults = fbResults.filter(r => r.similarity >= fbMinScore);
+                    }
+                    fbResults = fbResults.slice(0, topK);
+                    if (fbResults.length > 0) {
+                        console.log(`[Horae Vector] Fallback 召回 ${fbResults.length} 条`);
+                        for (const r of fbResults) r.source = (r.source || '') + '+fallback';
+                        results = fbResults;
+                    }
+                }
+            }
+        }
+
         console.log(`[Horae Vector] === 最终合并: ${results.length} 条 ===`);
         for (const r of results) {
             console.log(`  #${r.messageIndex} sim=${r.similarity.toFixed(3)} [${r.source}]`);

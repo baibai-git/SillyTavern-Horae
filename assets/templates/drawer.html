@@ -10,7 +10,7 @@
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">v1.11.15</span>
+            <span class="horae-version">v1.11.16</span>
         </div>
         
         <!-- 标签页导航 -->
@@ -140,7 +140,7 @@
                             <option value="关键" data-i18n="timeline.filterCritical">关键</option>
                             <option value="重要" data-i18n="timeline.filterImportant">重要</option>
                             <option value="一般" data-i18n="timeline.filterNormal">一般</option>
-                            <option value="摘要" data-i18n="timeline.filterSummary">摘要</option>
+                            <option value="摘要" data-i18n="timeline.filterSummary">总结</option>
                         </select>
                         <button id="horae-btn-timeline-multiselect" class="horae-icon-btn" data-i18n-title="tooltip.multiSelectMode" title="">
                             <i class="fa-solid fa-check-double"></i>
@@ -436,7 +436,7 @@
                     </div>
                     <span class="horae-setting-hint" data-i18n="settings.configProfileHint" style="margin-bottom:8px;">
                         <i class="fa-solid fa-circle-info"></i>
-                        导出当前所有开关、仅限主角设置、自定义提示词、RPG配置等为文件（不含自动摘要与向量记忆设置）。角色卡作者可将配置随卡分享，玩家导入后一键到位。
+                        导出当前所有开关、仅限主角设置、自定义提示词、RPG配置等为文件（不含自动总结与向量记忆设置）。角色卡作者可将配置随卡分享，玩家导入后一键到位。
                     </span>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;">
                         <button id="horae-settings-export" class="horae-rpg-btn-sm" data-i18n="settings.exportConfig" data-i18n-title="tooltip.exportGlobalConfig" title=""><i class="fa-solid fa-file-export"></i> 导出配置</button>
@@ -485,7 +485,7 @@
                         </label>
                         <span class="horae-setting-hint" data-i18n="settings.aiOutputLanguageHint">
                             <i class="fa-solid fa-circle-info"></i>
-                            控制AI在horae标签中输出的语言（事件摘要、NPC描述等）。格式标记保持不变，仅影响描述性文字。
+                            控制AI在horae标签中输出的语言（事件描述、NPC描述等）。格式标记保持不变，仅影响描述性文字。
                         </span>
                     </div>
 
@@ -680,7 +680,7 @@
                             <input type="checkbox" id="horae-setting-send-timeline" checked>
                             剧情轨迹
                         </label>
-                        <span class="horae-setting-sub-hint" data-i18n="settings.sendTimelineHint">历史事件摘要、相对时间计算。关闭后AI无法知道"几天前"发生了什么。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.sendTimelineHint">历史事件总结、相对时间计算。关闭后AI无法知道"几天前"发生了什么。</span>
                     </div>
                     
                     <div class="horae-setting-item">
@@ -815,26 +815,26 @@
                             <input type="checkbox" id="horae-setting-sideplay-mode">
                             番外/小剧场模式
                         </label>
-                        <span class="horae-setting-sub-hint" data-i18n="settings.sideplayModeHint">启用后，底部面板会出现「标记为番外」按钮。被标记的消息不会被Horae追踪、不参与自动摘要，适合在主线中穿插if/番外/小剧场。</span>
+                        <span class="horae-setting-sub-hint" data-i18n="settings.sideplayModeHint">启用后，底部面板会出现「标记为番外」按钮。被标记的消息不会被Horae追踪、不参与自动总结，适合在主线中穿插if/番外/小剧场。</span>
                     </div>
                 </div>
                 
                 <div class="horae-settings-section">
                     <div class="horae-section-header horae-collapse-header" id="horae-autosummary-collapse-toggle" data-i18n="settings.autoSummary">
                         <i class="fa-solid fa-compress"></i>
-                        自动摘要 & 隐藏
+                        自动总结 & 隐藏
                         <i class="fa-solid fa-chevron-down horae-collapse-icon collapsed"></i>
                     </div>
                     <div id="horae-autosummary-collapse-body" style="display: none;">
                         <span class="horae-setting-hint" data-i18n="settings.autoSummaryHint" style="margin-bottom: 12px;">
                             <i class="fa-solid fa-circle-info"></i>
-                            超过缓冲上限后自动将旧事件交给AI压缩为摘要，节省Token。<br>
-                            压缩后的摘要可在时间线中切换回原始事件查看。
+                            超过缓冲上限后自动将旧事件交给AI压缩为总结，节省Token。<br>
+                            压缩后的总结可在时间线中切换回原始事件查看。
                         </span>
                         <div class="horae-setting-item">
                             <label data-i18n="settings.enableAutoSummary">
                                 <input type="checkbox" id="horae-setting-auto-summary">
-                                启用自动摘要
+                                启用自动总结
                             </label>
                         </div>
                         <div id="horae-auto-summary-options" style="display: none;">
@@ -843,7 +843,7 @@
                                     保留最近消息数
                                     <input type="number" id="horae-setting-auto-summary-keep" min="3" max="100" value="10">
                                 </label>
-                                <span class="horae-setting-sub-hint" data-i18n="settings.keepRecentHint">最近N条消息<b>绝对不会</b>被摘要。确保近期剧情细节完整保留。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="settings.keepRecentHint">最近N条消息<b>绝对不会</b>被总结。确保近期剧情细节完整保留。</span>
                             </div>
                             <div class="horae-setting-item">
                                 <label data-i18n="settings.bufferMode">
@@ -864,17 +864,17 @@
                             <div class="horae-setting-hint" data-i18n="settings.autoSummaryExample" style="margin:8px 0; padding:8px; border-radius:6px; background:var(--horae-bg-secondary); font-size:11px; line-height:1.6;">
                                 <i class="fa-solid fa-lightbulb" style="color:var(--horae-accent);"></i>
                                 <b>举例</b>：假设保留=10，缓冲上限=20（楼层模式）<br>
-                                → 你聊到第 50 楼时：第 41-50 楼<b>绝对保留</b>不摘要<br>
-                                → 第 1-40 楼中，未被摘要的部分如果 <b>超过 20 楼</b>就触发一次自动摘要<br>
-                                → 每次摘要按照下方设置的批次上限（消息条数或Token数）处理一批，剩余的留到下一轮<br>
-                                简单理解：<b>保留 + 缓冲 = 多少楼之后才开始摘要</b>
+                                → 你聊到第 50 楼时：第 41-50 楼<b>绝对保留</b>不总结<br>
+                                → 第 1-40 楼中，未被总结的部分如果 <b>超过 20 楼</b>就触发一次自动总结<br>
+                                → 每次总结按照下方设置的批次上限（消息条数或Token数）处理一批，剩余的留到下一轮<br>
+                                简单理解：<b>保留 + 缓冲 = 多少楼之后才开始总结</b>
                             </div>
                             <div class="horae-setting-item" style="border-top: 1px solid var(--horae-border); padding-top: 8px; margin-top: 4px;">
                                 <label data-i18n="settings.batchMaxMessages">
                                     单次最大消息条数
                                     <input type="number" id="horae-setting-auto-summary-batch-msgs" min="5" max="500" value="50">
                                 </label>
-                                <span class="horae-setting-sub-hint" data-i18n="settings.batchMaxMessagesHint">每次自动摘要最多处理多少条消息。旧档案首次启用时会分多轮逐步消化。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="settings.batchMaxMessagesHint">每次自动总结最多处理多少条消息。旧档案首次启用时会分多轮逐步消化。</span>
                             </div>
                             <div class="horae-setting-item">
                                 <label data-i18n="settings.batchMaxTokens">
@@ -882,7 +882,7 @@
                                     <input type="number" id="horae-setting-auto-summary-batch-tokens" min="10000" max="1000000" step="10000" value="80000">
                                 </label>
                                 <span class="horae-setting-sub-hint" data-i18n="settings.batchMaxTokensHint">
-                                    每次摘要送入的文本 Token 上限，超出则截断至此值。<br>
+                                    每次总结送入的文本 Token 上限，超出则截断至此值。<br>
                                     参考各模型上下文窗口（建议设为 30%~50%）：<br>
                                     Claude ≈ 80K~200K · GPT-4o ≈ 80K~128K · Gemini ≈ 100K~1000K · DeepSeek ≈ 64K
                                 </span>
@@ -892,7 +892,7 @@
                                     <input type="checkbox" id="horae-setting-auto-summary-custom-api">
                                     使用独立 API（省钱 & 真并行）
                                 </label>
-                                <span class="horae-setting-sub-hint" data-i18n="settings.useIndependentApiHint">填入一个 OpenAI 兼容端点，摘要生成将直接请求该端点，不占用酒馆主连接。</span>
+                                <span class="horae-setting-sub-hint" data-i18n="settings.useIndependentApiHint">填入一个 OpenAI 兼容端点，总结/补全将直接请求该端点，不占用酒馆主连接。</span>
                             </div>
                             <div id="horae-auto-summary-api-options" style="display: none;">
                                 <div class="horae-setting-item">
@@ -925,7 +925,7 @@
                                 </div>
                                 <span class="horae-setting-sub-hint" data-i18n="settings.subApiHint">
                                     <i class="fa-solid fa-circle-info"></i>
-                                    填写完成后，自动摘要将通过独立 HTTP 请求并行生成，不影响酒馆主 API。<br>
+                                    填写完成后，自动总结将通过独立 HTTP 请求并行生成，不影响酒馆主 API。<br>
                                     支持所有 OpenAI 兼容格式的端点（OpenAI、DeepSeek、OpenRouter 等）。<br>
                                     连接测试仅查询模型列表，不消耗生成次数。
                                 </span>
@@ -1111,6 +1111,27 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="horae-setting-item" style="margin-top: 8px;">
+                                <label data-i18n="vector.fallbackEnabled">
+                                    <input type="checkbox" id="horae-setting-vector-fallback-enabled">
+                                    召回为空时用上一楼内容重试
+                                </label>
+                                <span class="horae-setting-hint" data-i18n="vector.fallbackHint" style="margin-top: 4px;">
+                                    <i class="fa-solid fa-circle-info"></i>
+                                    当用户输入无语义（如"剧情推进"），向量召回为空或全部低分时，<br>
+                                    自动用上一楼 AI 回复的内容作为查询重新检索一次，召回与当前场景相关的记忆。<br>
+                                    开启 Rerank 时以 Rerank 结果为准，未开 Rerank 时以下方阈值为准。
+                                </span>
+                            </div>
+                            <div id="horae-vector-fallback-options" style="display: none;">
+                                <div class="horae-setting-item">
+                                    <label data-i18n="vector.fallbackMinScore">
+                                        Fallback 触发阈值
+                                        <input type="number" id="horae-setting-vector-fallback-min-score" min="0" max="1" step="0.05" value="0.5">
+                                    </label>
+                                    <span class="horae-setting-sub-hint" data-i18n="vector.fallbackMinScoreHint">未启用 Rerank 时生效：首次召回最高分低于此值即触发 fallback。开了 Rerank 则由 Rerank 最低分决定。</span>
+                                </div>
+                            </div>
                             <div class="horae-setting-item">
                                 <label data-i18n="vector.topK">
                                     召回条数 (Top-K)
@@ -1148,7 +1169,7 @@
                                     用逗号分隔标签名。以下场景会整段移除这些标签包裹的内容：<br>
                                     · <b>向量检索</b>全文回顾 &amp; Rerank 全文精排<br>
                                     · <b>时间线解析</b>：防止小剧场内的 horae 标签污染正文时间线<br>
-                                    · <b>AI 智能摘要</b>：发送消息给 AI 分析前先剔除<br>
+                                    · <b>AI 智能补全</b>：发送消息给 AI 分析前先剔除<br>
                                     例：填 <code>snow, theater</code> 会剔除 <code>&lt;snow&gt;...&lt;/snow&gt;</code> 和 <code>&lt;theater&gt;...&lt;/theater&gt;</code>。<br>
                                     HTML 注释 <code>&lt;!-- ... --&gt;</code> 已默认剔除，无需填写。
                                 </span>
@@ -1219,7 +1240,7 @@
                         
                         <div class="horae-prompt-editor-group" style="margin-top: 12px;">
                             <div class="horae-prompt-editor-header">
-                                <span data-i18n="prompts.batchPrompt">AI 智能摘要提示词</span>
+                                <span data-i18n="prompts.batchPrompt">AI 智能补全提示词</span>
                                 <button id="horae-btn-reset-batch-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
@@ -1258,7 +1279,7 @@
 
                         <div class="horae-prompt-editor-group" style="margin-top: 12px;">
                             <div class="horae-prompt-editor-header">
-                                <span data-i18n="prompts.autoSummaryPrompt">自动摘要提示词（自动摘要&隐藏）</span>
+                                <span data-i18n="prompts.autoSummaryPrompt">自动总结提示词（自动总结&隐藏）</span>
                                 <button id="horae-btn-reset-auto-summary-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                 </button>
@@ -1349,7 +1370,7 @@
                         </button>
                         <button id="horae-btn-ai-scan" class="horae-data-btn primary" data-i18n-title="tooltip.aiScan" title="">
                             <i class="fa-solid fa-wand-magic-sparkles"></i>
-                            <span data-i18n="settings.aiSmartSummary">AI智能摘要</span>
+                            <span data-i18n="settings.aiSmartSummary">AI智能补全</span>
                         </button>
                         <button id="horae-btn-export" class="horae-data-btn">
                             <i class="fa-solid fa-file-export"></i>
@@ -1361,7 +1382,7 @@
                         </button>
                         <button id="horae-btn-undo-ai-scan" class="horae-data-btn danger" data-i18n-title="tooltip.undoScan" title="">
                             <i class="fa-solid fa-rotate-left"></i>
-                            <span data-i18n="settings.undoSummary">撤销摘要</span>
+                            <span data-i18n="settings.undoSummary">撤销补全</span>
                         </button>
                         <button id="horae-btn-clear" class="horae-data-btn danger">
                             <i class="fa-solid fa-trash-can"></i>
@@ -1376,7 +1397,7 @@
                 </div>
                 
                 <div class="horae-about">
-                    <p>Horae v1.11.15 | 作者: SenriYuki</p>
+                    <p>Horae v1.11.16 | 作者: SenriYuki</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>
