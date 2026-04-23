@@ -1,4 +1,4 @@
-# Horae v1.11.18 - Memory Engine for SillyTavern
+# Horae v1.11.19 - Memory Engine for SillyTavern
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 

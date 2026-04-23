@@ -4,6 +4,21 @@
 
 ---
 
+## v1.11.19
+
+- Vector recall query is now unified into a single embedding pass with merged format:
+  - `[当前情境] <time/location/characters/events from latest AI state>`
+  - `[玩家输入] <latest user input>`
+- Rerank query now uses the same merged query format instead of user text only.
+- State query now includes time (prefer latest AI turn timestamp; fallback to aggregated state time).
+- Removed fallback recall runtime path (retry with previous AI response) from vector recall flow.
+- Removed fallback controls from settings UI (fallback switch and fallback threshold panel).
+- Added runtime log for effective retrieval threshold to help debugging recall behavior.
+- 修复楼层 AI 分析时会触发向量召回的问题。
+- 将剧情轨迹（Story Timeline）的注入深度调整为聊天记录最上方。
+
+---
+
 ## v1.10.0
 
 全面重构 RPG 系统，新增 6 个 RPG 子模块、据点经营系统、装备多种族模板等功能。

@@ -10,7 +10,7 @@
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">v1.11.18</span>
+            <span class="horae-version">v1.11.19</span>
         </div>
         
         <!-- 标签页导航 -->
@@ -1111,27 +1111,6 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="horae-setting-item" style="margin-top: 8px;">
-                                <label data-i18n="vector.fallbackEnabled">
-                                    <input type="checkbox" id="horae-setting-vector-fallback-enabled">
-                                    召回为空时用上一楼内容重试
-                                </label>
-                                <span class="horae-setting-hint" data-i18n="vector.fallbackHint" style="margin-top: 4px;">
-                                    <i class="fa-solid fa-circle-info"></i>
-                                    当用户输入无语义（如"剧情推进"），向量召回为空或全部低分时，<br>
-                                    自动用上一楼 AI 回复的内容作为查询重新检索一次，召回与当前场景相关的记忆。<br>
-                                    开启 Rerank 时以 Rerank 结果为准，未开 Rerank 时以下方阈值为准。
-                                </span>
-                            </div>
-                            <div id="horae-vector-fallback-options" style="display: none;">
-                                <div class="horae-setting-item">
-                                    <label data-i18n="vector.fallbackMinScore">
-                                        Fallback 触发阈值
-                                        <input type="number" id="horae-setting-vector-fallback-min-score" min="0" max="1" step="0.05" value="0.5">
-                                    </label>
-                                    <span class="horae-setting-sub-hint" data-i18n="vector.fallbackMinScoreHint">未启用 Rerank 时生效：首次召回最高分低于此值即触发 fallback。开了 Rerank 则由 Rerank 最低分决定。</span>
-                                </div>
-                            </div>
                             <div class="horae-setting-item">
                                 <label data-i18n="vector.topK">
                                     召回条数 (Top-K)
@@ -1397,7 +1376,7 @@
                 </div>
                 
                 <div class="horae-about">
-                    <p>Horae v1.11.18 | 作者: SenriYuki</p>
+                    <p>Horae v1.11.19 | 作者: SenriYuki</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>
