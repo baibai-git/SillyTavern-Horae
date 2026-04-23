@@ -118,7 +118,7 @@ const DEFAULT_SETTINGS = {
     injectContext: true,
     showMessagePanel: true,
     contextDepth: 15,
-    injectionPosition: 1,
+    injectionPosition: 0,
     lastStoryDate: '',
     lastStoryTime: '',
     favoriteNpcs: [],  // 用户标记的星标NPC列表
