@@ -252,11 +252,11 @@ const DEFAULT_SETTINGS = {
     vectorRerankKey: '',               // Rerank API 密钥（留空则复用 embedding 密钥）
     vectorRerankCandidates: 25,        // Rerank 候选条数（开 rerank 时 embedding 召回上限）
     vectorRerankRecallThreshold: 0.3,  // Rerank 模式下的 embedding 召回阈值（远低于 vectorThreshold）
-    vectorRerankMinScore: 0.5,         // Rerank 后的相关性最低分（低于此值丢弃）
+    vectorRerankMinScore: 0.95,         // Rerank 后的相关性最低分（低于此值丢弃）
     vectorFallbackEnabled: false,      // 首次召回为空时用上一楼 AI 回复内容重试
     vectorFallbackMinScore: 0.5,       // 非 Rerank 模式下 fallback 触发阈值（最高分低于此值即 fallback）
-    vectorTopK: 5,
-    vectorThreshold: 0.72,
+    vectorTopK: 25,
+    vectorThreshold: 0.85,
     vectorFullTextCount: 3,
     vectorFullTextThreshold: 0.9,
     vectorStripTags: '',
