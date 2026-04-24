@@ -282,6 +282,13 @@ let selectedNpcs = new Set();       // 选中的NPC名称
 let timelineMultiSelectMode = false; // 时间线多选模式
 let selectedTimelineEvents = new Set(); // 选中的事件（"msgIndex-eventIndex"格式）
 let timelineLongPressTimer = null;  // 时间线长按计时器
+const _hideUnhideDebugStats = {
+    hide: 0,
+    unhide: 0,
+    hideMsgs: 0,
+    unhideMsgs: 0,
+    batches: 0,
+}; // debug stats
 
 // ============================================
 // 工具函数
@@ -1330,14 +1337,44 @@ async function setMessagesHidden(chat, indices, hidden) {
         const slashModule = await import('/scripts/slash-commands.js');
         const exec = slashModule.executeSlashCommandsWithOptions;
         const cmd = hidden ? '/hide' : '/unhide';
-        for (const idx of indices) {
-            if (!chat[idx]) continue;
+        const action = hidden ? 'hide' : 'unhide';
+        const msgCounterKey = hidden ? 'hideMsgs' : 'unhideMsgs';
+        const batchId = ++_hideUnhideDebugStats.batches;
+
+        const validIndices = [...new Set(indices.filter(idx => Number.isInteger(idx) && idx >= 0 && !!chat[idx]))]
+            .sort((a, b) => a - b);
+        const ranges = [];
+        if (validIndices.length > 0) {
+            let start = validIndices[0];
+            let prev = validIndices[0];
+            for (let i = 1; i < validIndices.length; i++) {
+                const cur = validIndices[i];
+                if (cur === prev + 1) {
+                    prev = cur;
+                    continue;
+                }
+                ranges.push([start, prev]);
+                start = cur;
+                prev = cur;
+            }
+            ranges.push([start, prev]);
+        }
+
+        console.log(`[Horae][Debug] /${action} batch#${batchId} start, indices=${indices.length}, valid=${validIndices.length}, ranges=${ranges.length}`);
+        for (let i = 0; i < ranges.length; i++) {
+            const [start, end] = ranges[i];
+            const rangeArg = start === end ? `${start}` : `${start}-${end}`;
+            const covered = end - start + 1;
             try {
-                await exec(`${cmd} ${idx}`);
+                _hideUnhideDebugStats[action]++;
+                _hideUnhideDebugStats[msgCounterKey] += covered;
+                console.log(`[Horae][Debug] /${action} call#${_hideUnhideDebugStats[action]} (batch#${batchId} ${i + 1}/${ranges.length}) range=${rangeArg} covers=${covered}`);
+                await exec(`${cmd} ${rangeArg}`);
             } catch (cmdErr) {
-                console.warn(`[Horae] ${cmd} ${idx} 失败:`, cmdErr);
+                console.warn(`[Horae] ${cmd} ${rangeArg} 失败:`, cmdErr);
             }
         }
+        console.log(`[Horae][Debug] batch#${batchId} done, total /hide=${_hideUnhideDebugStats.hide} (msgs=${_hideUnhideDebugStats.hideMsgs}), total /unhide=${_hideUnhideDebugStats.unhide} (msgs=${_hideUnhideDebugStats.unhideMsgs})`);
     } catch (e) {
         console.warn('[Horae] 无法加载酒馆命令模块，回退到手动设置:', e);
     }
