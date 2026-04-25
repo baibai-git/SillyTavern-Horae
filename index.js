@@ -8956,6 +8956,48 @@ function _tdGenerateVars(hue, sat, brightness, accentHex, colorLight) {
     return v;
 }
 
+// Keep this list in sync with the fine-tuning picker variables.
+const _TD_FINE_VAR_NAMES = [
+    '--horae-primary',
+    '--horae-primary-light',
+    '--horae-primary-dark',
+    '--horae-accent',
+    '--horae-success',
+    '--horae-warning',
+    '--horae-danger',
+    '--horae-info',
+    '--horae-bg',
+    '--horae-bg-secondary',
+    '--horae-bg-hover',
+    '--horae-text',
+    '--horae-text-muted'
+];
+
+function _tdNormalizeOverrides(overrides) {
+    const out = {};
+    if (!overrides || typeof overrides !== 'object') return out;
+    for (const key of _TD_FINE_VAR_NAMES) {
+        const val = overrides[key];
+        if (typeof val === 'string' && val.trim()) out[key] = val.trim();
+    }
+    return out;
+}
+
+function _tdInferOverridesFromTheme(themeVars, baseVars) {
+    const out = {};
+    if (!themeVars || typeof themeVars !== 'object') return out;
+    for (const key of _TD_FINE_VAR_NAMES) {
+        const tv = themeVars[key];
+        if (typeof tv !== 'string' || !tv.trim()) continue;
+        const themeVal = tv.trim();
+        const baseVal = typeof baseVars?.[key] === 'string' ? baseVars[key].trim() : '';
+        if (!baseVal || themeVal.toLowerCase() !== baseVal.toLowerCase()) {
+            out[key] = themeVal;
+        }
+    }
+    return out;
+}
+
 function _tdBuildImageCSS(images, opacities, bgHex, drawerBg) {
     const parts = [];
     // 顶部图标（#horae_drawer）
@@ -9029,6 +9071,7 @@ function openThemeDesigner() {
         if (curTheme.drawerBg) savedDrawerBg = curTheme.drawerBg;
         if (curTheme._designerState) savedDesigner = curTheme._designerState;
     }
+    const savedOverrides = _tdNormalizeOverrides(savedDesigner?.overrides);
 
     const st = {
         hue: savedDesigner?.hue ?? initHsl.h,
@@ -9045,8 +9088,12 @@ function openThemeDesigner() {
         diceOpacity: savedDesigner?.diceOpacity ?? 15,
         radarColor: savedDesigner?.radarColor ?? '',
         radarLabel: savedDesigner?.radarLabel ?? '',
-        overrides: {}
+        overrides: { ...savedOverrides }
     };
+    if (!Object.keys(st.overrides).length && curTheme?.variables) {
+        const baseVars = _tdGenerateVars(st.hue, st.sat, st.bright, st.accent, st.colorLight);
+        st.overrides = _tdInferOverridesFromTheme(curTheme.variables, baseVars);
+    }
 
     const abortCtrl = new AbortController();
     const sig = abortCtrl.signal;
@@ -9481,7 +9528,7 @@ function openThemeDesigner() {
             images: { ...st.images }, imageOpacity: { ...st.imgOp },
             drawerBg: st.drawerBg,
             isLight: st.bright > 50,
-            _designerState: { hue: st.hue, sat: st.sat, colorLight: st.colorLight, bright: st.bright, accent: st.accent, rpgColor: st.rpgColor, rpgOpacity: st.rpgOpacity, diceColor: st.diceColor, diceOpacity: st.diceOpacity, radarColor: st.radarColor, radarLabel: st.radarLabel },
+            _designerState: { hue: st.hue, sat: st.sat, colorLight: st.colorLight, bright: st.bright, accent: st.accent, rpgColor: st.rpgColor, rpgOpacity: st.rpgOpacity, diceColor: st.diceColor, diceOpacity: st.diceOpacity, radarColor: st.radarColor, radarLabel: st.radarLabel, overrides: { ...st.overrides } },
             css: _tdBuildImageCSS(st.images, st.imgOp, vars['--horae-bg'], st.drawerBg)
         };
         if (!settings.customThemes) settings.customThemes = [];
@@ -9520,7 +9567,7 @@ function openThemeDesigner() {
             images: { ...st.images }, imageOpacity: { ...st.imgOp },
             drawerBg: st.drawerBg,
             isLight: st.bright > 50,
-            _designerState: { hue: st.hue, sat: st.sat, colorLight: st.colorLight, bright: st.bright, accent: st.accent, rpgColor: st.rpgColor, rpgOpacity: st.rpgOpacity, diceColor: st.diceColor, diceOpacity: st.diceOpacity, radarColor: st.radarColor, radarLabel: st.radarLabel },
+            _designerState: { hue: st.hue, sat: st.sat, colorLight: st.colorLight, bright: st.bright, accent: st.accent, rpgColor: st.rpgColor, rpgOpacity: st.rpgOpacity, diceColor: st.diceColor, diceOpacity: st.diceOpacity, radarColor: st.radarColor, radarLabel: st.radarLabel, overrides: { ...st.overrides } },
             css: _tdBuildImageCSS(st.images, st.imgOp, vars['--horae-bg'], st.drawerBg)
         };
         const blob = new Blob([JSON.stringify(theme, null, 2)], { type: 'application/json' });
