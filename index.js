@@ -271,6 +271,8 @@ let isInitialized = false;
 let _isSummaryGeneration = false;
 let _summaryInProgress = false;
 let _chatFullyLoaded = false;
+let _vectorEnsureIndexPromise = null;
+let _vectorEnsureIndexChatId = null;
 let itemsMultiSelectMode = false;  // 物品多选模式
 let selectedItems = new Set();     // 选中的物品名称
 let longPressTimer = null;         // 长按计时器
@@ -12484,6 +12486,89 @@ function _updateVectorStatus() {
     }
 }
 
+/** 计算当前聊天中缺失/过期的向量索引数量（仅统计可索引消息） */
+function _countVectorIndexGap(chat) {
+    if (!Array.isArray(chat) || chat.length === 0) return { missing: 0, indexable: 0 };
+
+    let missing = 0;
+    let indexable = 0;
+
+    for (let i = 0; i < chat.length; i++) {
+        const msg = chat[i];
+        if (!msg || msg.is_user) continue;
+
+        const meta = msg.horae_meta;
+        if (!meta || meta._skipHorae) continue;
+
+        const doc = vectorManager.buildVectorDocument(meta);
+        if (!doc) continue;
+
+        indexable++;
+        const existing = vectorManager.vectors.get(i);
+        if (!existing) {
+            missing++;
+            continue;
+        }
+
+        try {
+            const hash = vectorManager._hashString(doc);
+            if (existing.hash !== hash) missing++;
+        } catch (_) {
+            missing++;
+        }
+    }
+
+    return { missing, indexable };
+}
+
+async function _ensureVectorIndexBeforeRecall() {
+    if (!settings.vectorEnabled || !vectorManager.isReady) return;
+
+    const chat = horaeManager.getChat();
+    if (!chat || chat.length === 0) return;
+
+    const ctx = getContext();
+    const chatId = _deriveChatId(ctx);
+    if (!chatId || chatId === 'unknown') return;
+
+    if (_vectorEnsureIndexPromise) {
+        await _vectorEnsureIndexPromise.catch(() => {});
+    }
+
+    if (vectorManager.chatId !== chatId) {
+        await vectorManager.loadChat(chatId, chat);
+        _updateVectorStatus();
+    }
+
+    const { missing, indexable } = _countVectorIndexGap(chat);
+    if (missing <= 0) return;
+
+    showToast(`检测到 ${missing}/${indexable} 条向量索引缺失，正在补建索引。请勿切换或退出聊天。`, 'warning');
+
+    const runChatId = chatId;
+    _vectorEnsureIndexChatId = runChatId;
+    _vectorEnsureIndexPromise = vectorManager.batchIndex(chat);
+
+    try {
+        const result = await _vectorEnsureIndexPromise;
+        const currentChatId = _deriveChatId(getContext());
+        if (currentChatId === runChatId) {
+            showToast(`向量索引补建完成：新增 ${result.indexed} 条，跳过 ${result.skipped} 条。`, 'success');
+        } else {
+            console.warn(`[Horae] 向量索引补建完成，但聊天已切换: ${runChatId} -> ${currentChatId}`);
+        }
+    } catch (err) {
+        console.error('[Horae] 向量索引自动补建失败:', err);
+        showToast(`向量索引补建失败：${err?.message || err}`, 'error');
+    } finally {
+        if (_vectorEnsureIndexChatId === runChatId) {
+            _vectorEnsureIndexPromise = null;
+            _vectorEnsureIndexChatId = null;
+        }
+        _updateVectorStatus();
+    }
+}
+
 /** 检测是否为移动端（iOS/Android/小屏设备） */
 function _isMobileDevice() {
     const ua = navigator.userAgent || '';
@@ -15857,6 +15942,7 @@ async function onPromptReady(eventData) {
             console.log('[Horae] Internal no-recall marker detected, skip vector recall for this request');
         } else if (settings.vectorEnabled && vectorManager.isReady) {
             try {
+                await _ensureVectorIndexBeforeRecall();
                 const promptCoveredChatIndices = _collectPromptCoveredChatIndices(chat, eventData.chat);
                 if (promptCoveredChatIndices.size > 0) {
                     console.log(`[Horae] Prompt已覆盖楼层: ${promptCoveredChatIndices.size}，召回将排除这些楼层`);
