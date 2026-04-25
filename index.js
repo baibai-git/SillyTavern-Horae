@@ -11911,7 +11911,7 @@ function initSettingsEvents() {
     
     $('#horae-btn-export').on('click', exportData);
     $('#horae-btn-import').on('click', importData);
-    $('#horae-btn-carry-new-chat').on('click', createNewChatWithCarryover);
+    $('#horae-btn-carry-new-chat, #horae-btn-carry-new-chat-timeline').on('click', createNewChatWithCarryover);
     $('#horae-btn-clear').on('click', clearAllData);
     
     // 好感度显示/隐藏（不可用hidden类名，酒馆全局有display:none规则）
