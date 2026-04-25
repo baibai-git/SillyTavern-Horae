@@ -3,11 +3,11 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki
- * 版本: 1.11.19
+ * 版本: 1.12.0
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
-import { getSlideToggleOptions, saveSettingsDebounced, eventSource, event_types } from '/script.js';
+import { getSlideToggleOptions, saveSettingsDebounced, eventSource, event_types, doNewChat } from '/script.js';
 import { slideToggle } from '/lib.js';
 
 import { horaeManager, createEmptyMeta, getItemBaseName } from './core/horaeManager.js';
@@ -21,7 +21,7 @@ import { t, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLan
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.11.19';
+const VERSION = '1.12.0';
 
 // 配套正则规则（自动注入ST原生正则系统）
 const HORAE_REGEX_RULES = [
@@ -2154,6 +2154,7 @@ async function compressSelectedTimelineEvents() {
         const evtsArr = meta.events || (meta.event ? [meta.event] : []);
         const evt = evtsArr[evtIdx];
         if (!evt) continue;
+        if (evt._carryoverSeed) continue;
         const date = meta.timestamp?.story_date || '?';
         const time = meta.timestamp?.story_time || '';
         const isSummary = evt.isSummary || evt.level === '摘要';
@@ -11910,6 +11911,7 @@ function initSettingsEvents() {
     
     $('#horae-btn-export').on('click', exportData);
     $('#horae-btn-import').on('click', importData);
+    $('#horae-btn-carry-new-chat').on('click', createNewChatWithCarryover);
     $('#horae-btn-clear').on('click', clearAllData);
     
     // 好感度显示/隐藏（不可用hidden类名，酒馆全局有display:none规则）
@@ -13777,6 +13779,10 @@ async function checkAutoSummary() {
         for (let i = 0; i < cutoff; i++) {
             const evts = chat[i]?.horae_meta?.events;
             if (!evts?.length) continue;
+            if (evts.some(e => e?._carryoverSeed)) {
+                manualSummaryMsgIndices.add(i);
+                continue;
+            }
             if (evts.some(e => e.isSummary && !e._compressedBy)) {
                 manualSummaryMsgIndices.add(i);
             }
@@ -13787,6 +13793,7 @@ async function checkAutoSummary() {
         for (let i = 0; i < cutoff; i++) {
             if (chat[i]?.is_hidden || summarizedIndices.has(i)) continue;
             if (chat[i]?.horae_meta?._skipHorae) continue;
+            if (chat[i]?.horae_meta?.events?.some(e => e?._carryoverSeed)) continue;
             if (manualSummaryMsgIndices.has(i)) continue;
             if (!chat[i]?.is_user && isEmptyOrCodeLayer(chat[i]?.mes)) continue;
             // 跳过事件全部已被压缩的消息
@@ -13836,7 +13843,7 @@ async function checkAutoSummary() {
             if (!meta.events) continue;
             for (let j = 0; j < meta.events.length; j++) {
                 const evt = meta.events[j];
-                if (!evt?.summary || evt._compressedBy || evt.isSummary) continue;
+                if (!evt?.summary || evt._compressedBy || evt.isSummary || evt._carryoverSeed) continue;
                 bufferEvents.push({
                     msgIdx: i, evtIdx: j,
                     date: meta.timestamp?.story_date || '?',
@@ -15189,6 +15196,313 @@ async function undoAIScan() {
     renderCustomTablesList();
 }
 
+function _deepCloneData(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function _normalizeMetaEvents(meta) {
+    if (!meta) return [];
+    if (meta.event && !meta.events) {
+        meta.events = [meta.event];
+        delete meta.event;
+    }
+    if (!Array.isArray(meta.events)) meta.events = [];
+    return meta.events;
+}
+
+function _sanitizeCarryMessage(rawMessage) {
+    const msg = _deepCloneData(rawMessage);
+    if (!msg) return null;
+    msg.is_hidden = false;
+
+    if (!msg.horae_meta) return msg;
+
+    const events = _normalizeMetaEvents(msg.horae_meta);
+    msg.horae_meta.events = events.map(evt => {
+        if (!evt || typeof evt !== 'object') return evt;
+        const cleaned = { ...evt };
+        delete cleaned._compressedBy;
+        delete cleaned._summaryId;
+        return cleaned;
+    });
+    delete msg.horae_meta.autoSummaries;
+    return msg;
+}
+
+function _buildCarryoverCompensationBlocks(events, chunkSize = 8) {
+    if (!Array.isArray(events) || events.length === 0) return [];
+
+    const size = Math.max(1, parseInt(chunkSize, 10) || 8);
+    const blocks = [];
+
+    for (let i = 0; i < events.length; i += size) {
+        const part = events.slice(i, i + size);
+        const lines = part.map((evt, idx) => {
+            const date = evt.date || '?';
+            const time = evt.time ? ` ${evt.time}` : '';
+            const level = evt.level || '一般';
+            return `${idx + 1}. [${date}${time}] [${level}] ${evt.summary}`;
+        });
+        blocks.push(lines.join('\n'));
+    }
+
+    return blocks;
+}
+
+function _collectCarryoverRecapTexts(sourceChat, cutoffIndex) {
+    const recapTexts = [];
+    const seen = new Set();
+    const cutoff = Number.isInteger(cutoffIndex) ? cutoffIndex : sourceChat.length;
+    const coveredMsgIndices = new Set();
+    const coveredSummaryIds = new Set();
+
+    const pushRecap = (rawText) => {
+        const text = typeof rawText === 'string' ? rawText.trim() : '';
+        if (!text) return;
+        const key = text.replace(/\s+/g, ' ').trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        recapTexts.push(text);
+    };
+
+    const firstMeta = sourceChat?.[0]?.horae_meta;
+    const summaries = Array.isArray(firstMeta?.autoSummaries) ? [...firstMeta.autoSummaries] : [];
+    summaries.sort((a, b) => {
+        const aStart = Array.isArray(a?.range) ? (a.range[0] ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+        const bStart = Array.isArray(b?.range) ? (b.range[0] ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+        return aStart - bStart;
+    });
+
+    for (const s of summaries) {
+        if (!s || typeof s !== 'object') continue;
+        let include = true;
+
+        if (Array.isArray(s.range) && s.range.length >= 2) {
+            const rangeStart = Number.isInteger(s.range[0]) ? s.range[0] : Number.MAX_SAFE_INTEGER;
+            const rangeEnd = Number.isInteger(s.range[1]) ? s.range[1] : Number.MAX_SAFE_INTEGER;
+            if (rangeEnd >= cutoff) include = false;
+            if (include) {
+                for (let i = Math.max(1, rangeStart); i <= Math.min(cutoff - 1, rangeEnd); i++) {
+                    coveredMsgIndices.add(i);
+                }
+            }
+        }
+
+        if (!include) continue;
+        if (s.id) coveredSummaryIds.add(s.id);
+        if (Array.isArray(s.coveredIndices)) {
+            for (const idx of s.coveredIndices) {
+                if (Number.isInteger(idx) && idx >= 1 && idx < cutoff) {
+                    coveredMsgIndices.add(idx);
+                }
+            }
+        }
+
+        if (Array.isArray(s.range) && s.range.length >= 2) {
+            const rangeEnd = Number.isInteger(s.range[1]) ? s.range[1] : Number.MAX_SAFE_INTEGER;
+            if (rangeEnd >= cutoff) continue;
+        }
+        pushRecap(s.summaryText || s.summary || s.title || '');
+    }
+
+    const upperBound = Math.max(1, cutoff);
+    const standaloneEvents = [];
+    const standaloneSeen = new Set();
+    for (let i = 1; i < upperBound; i++) {
+        const meta = sourceChat?.[i]?.horae_meta;
+        if (!meta) continue;
+        const events = meta.events || (meta.event ? [meta.event] : []);
+        for (const evt of events) {
+            if (!evt || typeof evt !== 'object') continue;
+            const summary = typeof evt.summary === 'string' ? evt.summary.trim() : '';
+            if (!summary) continue;
+
+            const isSummaryEvent = !!(evt.isSummary || evt.level === '摘要' || evt._summaryId);
+            if (isSummaryEvent) {
+                pushRecap(summary);
+                continue;
+            }
+
+            if (evt._compressedBy && coveredSummaryIds.has(evt._compressedBy)) continue;
+            if (coveredMsgIndices.has(i)) continue;
+
+            const date = meta.timestamp?.story_date || '?';
+            const time = meta.timestamp?.story_time || '';
+            const level = evt.level || '一般';
+            const key = `${i}|${date}|${time}|${level}|${summary}`;
+            if (standaloneSeen.has(key)) continue;
+            standaloneSeen.add(key);
+
+            standaloneEvents.push({
+                date,
+                time,
+                level,
+                summary,
+            });
+        }
+    }
+
+    const compensationBlocks = _buildCarryoverCompensationBlocks(standaloneEvents, 8);
+    for (const block of compensationBlocks) {
+        pushRecap(block);
+    }
+
+    return recapTexts;
+}
+
+function _composeCarryoverRecapText(recapTexts) {
+    if (!Array.isArray(recapTexts) || recapTexts.length === 0) return '';
+    const lines = recapTexts.map((text, idx) => `${idx + 1}. ${text}`);
+    return `【承接旧对话剧情回顾（共${recapTexts.length}条）】\n${lines.join('\n')}`;
+}
+
+function _buildImportObjectFromChat(chat) {
+    return {
+        version: VERSION,
+        exportTime: new Date().toISOString(),
+        data: (chat || [])
+            .map((msg, index) => ({ index, horae_meta: _deepCloneData(msg?.horae_meta || null) }))
+            .filter(item => item.horae_meta),
+    };
+}
+
+function _getCarryVisibleIndices(chat, keepCount) {
+    const result = { indices: [], aiCount: 0 };
+    if (!Array.isArray(chat) || chat.length <= 1) return result;
+    if (keepCount <= 0) return result;
+
+    const selectedAiIndices = [];
+    for (let i = chat.length - 1; i >= 1; i--) {
+        const msg = chat[i];
+        if (!msg || msg.is_hidden) continue;
+        if (msg.is_user) continue;
+        selectedAiIndices.push(i);
+        if (selectedAiIndices.length >= keepCount) break;
+    }
+
+    if (selectedAiIndices.length === 0) return result;
+
+    selectedAiIndices.sort((a, b) => a - b);
+    const carryStart = selectedAiIndices[0];
+
+    for (let i = carryStart; i < chat.length; i++) {
+        const msg = chat[i];
+        if (!msg || msg.is_hidden) continue;
+        result.indices.push(i);
+    }
+
+    result.aiCount = selectedAiIndices.length;
+    return result;
+}
+
+function _createCarryoverAnchorMessage() {
+    const ctx = getContext();
+    return {
+        name: ctx?.name2 || 'Assistant',
+        is_user: false,
+        is_system: true,
+        mes: '',
+        is_hidden: true,
+        horae_meta: createEmptyMeta(),
+    };
+}
+
+function _stripFreshChatPreludeForCarryover(targetChat) {
+    if (!Array.isArray(targetChat) || targetChat.length === 0) return 0;
+    if (targetChat.some(msg => !!msg?.is_user)) return 0;
+
+    const preludeCount = targetChat.length;
+    if (preludeCount <= 0) return 0;
+
+    // 保留第 1 层作为元数据锚点，其余开场白楼层移除
+    const anchor = targetChat[0];
+    anchor.mes = '';
+    anchor.is_hidden = true;
+    if (Array.isArray(anchor.swipes)) anchor.swipes = [];
+    if (typeof anchor.swipe_id === 'number') anchor.swipe_id = 0;
+    targetChat.splice(1);
+    return preludeCount;
+}
+
+async function createNewChatWithCarryover() {
+    const sourceChat = horaeManager.getChat();
+    if (!Array.isArray(sourceChat) || sourceChat.length === 0) {
+        showToast('当前对话没有可携带的数据', 'warning');
+        return;
+    }
+
+    const keepRaw = parseInt(settings.autoSummaryKeepRecent, 10);
+    const keepCount = Number.isFinite(keepRaw) && keepRaw >= 0 ? keepRaw : 10;
+    const carryPlan = _getCarryVisibleIndices(sourceChat, keepCount);
+    const carryIndices = carryPlan.indices;
+    const carryAiCount = carryPlan.aiCount;
+    const carryMessages = carryIndices.map(i => _sanitizeCarryMessage(sourceChat[i])).filter(Boolean);
+    const carryStart = carryIndices.length > 0 ? carryIndices[0] : sourceChat.length;
+    const recapTexts = _collectCarryoverRecapTexts(sourceChat, carryStart);
+    const recapText = _composeCarryoverRecapText(recapTexts);
+    const importObj = _buildImportObjectFromChat(sourceChat);
+
+    if (importObj.data.length === 0 && carryMessages.length === 0 && !recapText) {
+        showToast('当前对话没有可携带的数据', 'warning');
+        return;
+    }
+
+    const confirmText = [
+        `将按“保留楼层数=${keepCount}”携带最近 AI 楼层，并创建新对话。`,
+        '',
+        `将携带AI楼层：${carryAiCount} 条`,
+        `实际携带消息：${carryMessages.length} 条（含夹带User）`,
+        `旧剧情回顾：${recapTexts.length} 条`,
+        '',
+        '继续吗？',
+    ].join('\n');
+    if (!confirm(confirmText)) return;
+
+    try {
+        await getContext().saveChat();
+        await doNewChat({ deleteCurrentChat: false });
+
+        const targetChat = horaeManager.getChat();
+        if (!Array.isArray(targetChat)) throw new Error('新对话创建失败');
+        if (targetChat.length === 0) targetChat.push(_createCarryoverAnchorMessage());
+        const removedPreludeCount = carryMessages.length > 0 ? _stripFreshChatPreludeForCarryover(targetChat) : 0;
+        if (targetChat.length === 0) targetChat.push(_createCarryoverAnchorMessage());
+
+        _importAsInitialState(importObj, targetChat, { includeTimeline: false });
+
+        if (!targetChat[0].horae_meta) targetChat[0].horae_meta = createEmptyMeta();
+        if (!Array.isArray(targetChat[0].horae_meta.events)) targetChat[0].horae_meta.events = [];
+        targetChat[0].horae_meta.events = targetChat[0].horae_meta.events.filter(evt => !evt?._carryoverSeed);
+
+        if (recapText) {
+            targetChat[0].horae_meta.events.unshift({
+                is_important: true,
+                level: '摘要',
+                summary: recapText,
+                isSummary: true,
+                _carryoverSeed: true,
+            });
+        }
+
+        for (const msg of carryMessages) {
+            targetChat.push(msg);
+        }
+
+        await getContext().saveChat();
+        if (typeof getContext().reloadCurrentChat === 'function') {
+            await getContext().reloadCurrentChat();
+        }
+        _rebuildGlobalDataForCurrentChat();
+        refreshAllDisplays();
+        renderCustomTablesList();
+
+        showToast(`已创建新对话：AI ${carryAiCount} 条，实际消息 ${carryMessages.length} 条，旧剧情回顾 ${recapTexts.length} 条${removedPreludeCount > 0 ? `，已清理开场白 ${removedPreludeCount} 条` : ''}`, 'success');
+    } catch (error) {
+        console.error('[Horae] 创建携带记忆新对话失败:', error);
+        showToast(`创建新对话失败: ${error.message || error}`, 'error');
+    }
+}
+
 /**
  * 导出数据
  */
@@ -15265,7 +15579,8 @@ function importData() {
  * 从导出文件提取最终累积状态，写入当前对话的 chat[0] 作为初始元数据，
  * 适用于新聊天继承旧聊天的世界观数据。
  */
-function _importAsInitialState(importObj, chat) {
+function _importAsInitialState(importObj, chat, options = {}) {
+    const includeTimeline = options.includeTimeline !== false;
     const allMetas = importObj.data
         .sort((a, b) => a.index - b.index)
         .map(d => d.horae_meta)
@@ -15319,23 +15634,25 @@ function _importAsInitialState(importObj, chat) {
         }
     }
     
-    // 导入所有事件（含摘要事件），保留 _compressedBy / _summaryId 引用
     const importedEvents = [];
-    for (const meta of allMetas) {
-        if (!meta.events?.length) continue;
-        for (const evt of meta.events) {
-            importedEvents.push({ ...evt });
+    if (includeTimeline) {
+        // 导入所有事件（含摘要事件），保留 _compressedBy / _summaryId 引用
+        for (const meta of allMetas) {
+            if (!meta.events?.length) continue;
+            for (const evt of meta.events) {
+                importedEvents.push({ ...evt });
+            }
         }
-    }
-    if (importedEvents.length > 0) {
-        if (!target.events) target.events = [];
-        target.events.push(...importedEvents);
-    }
-    
-    // 导入自动摘要记录（来自源数据的 chat[0]）
-    const srcFirstMeta = allMetas[0];
-    if (srcFirstMeta?.autoSummaries?.length) {
-        target.autoSummaries = srcFirstMeta.autoSummaries.map(s => ({ ...s }));
+        if (importedEvents.length > 0) {
+            if (!target.events) target.events = [];
+            target.events.push(...importedEvents);
+        }
+
+        // 导入自动摘要记录（来自源数据的 chat[0]）
+        const srcFirstMeta = allMetas[0];
+        if (srcFirstMeta?.autoSummaries?.length) {
+            target.autoSummaries = srcFirstMeta.autoSummaries.map(s => ({ ...s }));
+        }
     }
     
     // 关系网络
