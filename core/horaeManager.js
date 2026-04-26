@@ -1064,14 +1064,13 @@ class HoraeManager {
                     return (a.messageIndex || 0) - (b.messageIndex || 0);
                 });
                 
-                const criticalAndImportant = sortedEvents.filter(e => 
+                const criticalAndImportant = sortedEvents.filter(e =>
                     e.event?.level === '关键' || e.event?.level === '關鍵' || e.event?.level === '重要' || e.event?.level === '摘要' || e.event?.isSummary
                 );
-                const contextDepth = this.settings?.contextDepth ?? 15;
-                const normalAll = sortedEvents.filter(e => 
+                // 普通事件改为全量发送；由自动总结机制控制历史体量
+                const normalEvents = sortedEvents.filter(e =>
                     (e.event?.level === '一般' || !e.event?.level) && !e.event?.isSummary
                 );
-                const normalEvents = contextDepth === 0 ? [] : normalAll.slice(-contextDepth);
                 
                 const allToShow = [...criticalAndImportant, ...normalEvents]
                     .sort((a, b) => (a.messageIndex || 0) - (b.messageIndex || 0));

@@ -118,7 +118,6 @@ const DEFAULT_SETTINGS = {
     injectContext: true,
     useMainPresetForAiTasks: false, // AI分析/批量扫描/手动压缩是否使用酒馆主预设（generate）
     showMessagePanel: true,
-    contextDepth: 15,
     injectionPosition: 0,
     lastStoryDate: '',
     lastStoryTime: '',
@@ -10913,14 +10912,6 @@ function initSettingsEvents() {
         applyTopIconVisibility();
     });
     
-    $('#horae-setting-context-depth').on('change', function() {
-        settings.contextDepth = parseInt(this.value);
-        if (isNaN(settings.contextDepth) || settings.contextDepth < 0) settings.contextDepth = 15;
-        saveSettings();
-        horaeManager.init(getContext(), settings);
-        updateTokenCounter();
-    });
-    
     $('#horae-setting-injection-position').on('change', function() {
         const val = parseInt(this.value, 10);
         settings.injectionPosition = Number.isNaN(val) ? 1 : Math.max(0, val);
@@ -11505,7 +11496,7 @@ function initSettingsEvents() {
     // ── Horae 全局配置 导出/导入/重置 ──
     const _SETTINGS_EXPORT_KEYS = [
         'enabled','autoParse','injectContext','useMainPresetForAiTasks','showMessagePanel','showTopIcon',
-        'contextDepth','injectionPosition',
+        'injectionPosition',
         'sendTimeline','sendCharacters','sendItems',
         'sendLocationMemory','sendRelationships','sendMood',
         'antiParaphraseMode','sideplayMode',
@@ -12331,7 +12322,6 @@ function syncSettingsToUI() {
     $('#horae-setting-show-panel').prop('checked', settings.showMessagePanel);
     $('#horae-setting-show-top-icon').prop('checked', settings.showTopIcon !== false);
     $('#horae-ext-show-top-icon').prop('checked', settings.showTopIcon !== false);
-    $('#horae-setting-context-depth').val(settings.contextDepth);
     $('#horae-setting-injection-position').val(settings.injectionPosition);
     $('#horae-setting-send-timeline').prop('checked', settings.sendTimeline);
     $('#horae-setting-send-characters').prop('checked', settings.sendCharacters);
@@ -16653,7 +16643,6 @@ function _getTutorialSteps() {
           action: () => { const b = document.getElementById('horae-autosummary-collapse-body'); if (b && b.style.display === 'none') document.getElementById('horae-autosummary-collapse-toggle')?.click(); } },
         { title: t('tutorial.step4Title'), content: t('tutorial.step4Content'), target: '#horae-vector-collapse-toggle',
           action: () => { const b = document.getElementById('horae-vector-collapse-body'); if (b && b.style.display === 'none') document.getElementById('horae-vector-collapse-toggle')?.click(); } },
-        { title: t('tutorial.step5Title'), content: t('tutorial.step5Content'), target: '#horae-setting-context-depth', action: null },
         { title: t('tutorial.step6Title'), content: t('tutorial.step6Content'), target: '#horae-setting-injection-position', action: null },
         { title: t('tutorial.step7Title'), content: t('tutorial.step7Content'), target: '#horae-prompt-collapse-toggle',
           action: () => { const b = document.getElementById('horae-prompt-collapse-body'); if (b && b.style.display === 'none') document.getElementById('horae-prompt-collapse-toggle')?.click(); } },
