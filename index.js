@@ -13744,7 +13744,7 @@ async function _geminiNativeRequest(prompt, rawUrl, model, apiKey) {
 
 /** 自动摘要：检查是否需要触发 */
 async function checkAutoSummary() {
-    if (!settings.autoSummaryEnabled || !settings.sendTimeline) return;
+    if (!settings.enabled || !settings.autoSummaryEnabled || !settings.sendTimeline) return;
     if (_summaryInProgress) return;
     _summaryInProgress = true;
     
@@ -15979,7 +15979,7 @@ async function onMessageReceived(messageId) {
         }
     }
 
-    if (!isRegenerate && settings.autoSummaryEnabled && settings.sendTimeline) {
+    if (!isRegenerate && settings.enabled && settings.autoSummaryEnabled && settings.sendTimeline) {
         setTimeout(() => {
             if (!_autoSummaryRanThisTurn) {
                 checkAutoSummary();
@@ -16811,7 +16811,7 @@ jQuery(async () => {
     // 并行自动摘要：用户发消息时并行触发（独立API走直接HTTP，不影响主连接）
     if (event_types.USER_MESSAGE_RENDERED) {
         eventSource.on(event_types.USER_MESSAGE_RENDERED, () => {
-            if (!settings.autoSummaryEnabled || !settings.sendTimeline) return;
+            if (!settings.enabled || !settings.autoSummaryEnabled || !settings.sendTimeline) return;
             _autoSummaryRanThisTurn = true;
             checkAutoSummary().catch((e) => {
                 console.warn('[Horae] 并行自动摘要失败，将在AI回复后重试:', e);
