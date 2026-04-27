@@ -235,6 +235,7 @@
         "settingsImported": "{{n}}件の設定をインポートしました",
         "settingsRestored": "すべての設定をデフォルトに戻しました",
         "promptsExported": "プロンプトをエクスポートしました",
+        "promptsImported": "プロンプトをインポートしました",
         "promptsRestored": "すべてのプロンプトをデフォルトに戻しました",
         "rpgBarsRestored": "デフォルトのステータスバーを復元しました",
         "rpgBarsImported": "{{n}}件のステータスバー設定をインポートしました",

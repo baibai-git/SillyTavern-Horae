@@ -233,6 +233,7 @@
         "settingsImported": "{{n}}개 설정 가져옴",
         "settingsRestored": "모든 설정이 기본값으로 복원됨",
         "promptsExported": "프롬프트 내보내기 완료",
+        "promptsImported": "프롬프트 가져오기 완료",
         "promptsRestored": "모든 프롬프트가 기본값으로 복원됨",
         "rpgBarsRestored": "기본 상태 바 복원됨",
         "rpgBarsImported": "{{n}}개 상태 바 설정 가져옴",

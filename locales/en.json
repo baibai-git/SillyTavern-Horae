@@ -231,6 +231,7 @@
         "settingsImported": "{{n}} settings imported",
         "settingsRestored": "All settings restored to defaults",
         "promptsExported": "Prompts exported",
+        "promptsImported": "Prompts imported",
         "promptsRestored": "All prompts restored to defaults",
         "rpgBarsRestored": "Default status bars restored",
         "rpgBarsImported": "{{n}} status bar configs imported",

@@ -11536,7 +11536,7 @@ function initSettingsEvents() {
                 _applyPresetPrompts(data.prompts);
                 const body = document.getElementById('horae-prompt-collapse-body');
                 if (body) body.style.display = '';
-                showToast(t('toast.promptsExported'), 'success');
+                showToast(t('toast.promptsImported'), 'success');
             } catch (err) {
                 showToast(t('toast.importFailed', {error: err.message}), 'error');
             }

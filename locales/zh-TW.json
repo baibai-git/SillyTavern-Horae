@@ -198,6 +198,7 @@
         "settingsImported": "已匯入 {{n}} 項設置",
         "settingsRestored": "已將所有設置恢復為預設值",
         "promptsExported": "提示詞已匯出",
+        "promptsImported": "提示詞已匯入",
         "promptsRestored": "已將所有提示詞恢復為預設值",
         "rpgBarsRestored": "已恢復預設屬性條",
         "rpgBarsImported": "已匯入 {{n}} 條屬性條配置",
