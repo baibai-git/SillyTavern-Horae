@@ -355,7 +355,7 @@ export class VectorManager {
 
         if (tasks.length === 0) return { indexed: 0, skipped: chat.length };
 
-        const batchSize = this.isApiMode ? 8 : 16;
+        const batchSize = this.isApiMode ? 64 : 16;
         let indexed = 0;
 
         for (let b = 0; b < tasks.length; b += batchSize) {

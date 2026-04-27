@@ -863,6 +863,13 @@
                                 </label>
                                 <span class="horae-setting-sub-hint" id="horae-auto-summary-limit-hint" data-i18n="settings.bufferLimitHint">超过此上限时触发自动压缩。</span>
                             </div>
+                            <div class="horae-setting-item">
+                                <label data-i18n="settings.resummaryThreshold">
+                                    总结数量达到多少时进行二次总结
+                                    <input type="number" id="horae-setting-auto-summary-resummary-threshold" min="0" max="999" value="10">
+                                </label>
+                                <span class="horae-setting-sub-hint" data-i18n="settings.resummaryThresholdHint">二次总结也达到数量时会进行三次总结（以此类推）</span>
+                            </div>
                             <div class="horae-setting-hint" data-i18n="settings.autoSummaryExample" style="margin:8px 0; padding:8px; border-radius:6px; background:var(--horae-bg-secondary); font-size:11px; line-height:1.6;">
                                 <i class="fa-solid fa-lightbulb" style="color:var(--horae-accent);"></i>
                                 <b>举例</b>：假设保留=10，缓冲上限=20（楼层模式）<br>
@@ -1268,6 +1275,19 @@
                             <textarea id="horae-custom-auto-summary-prompt" class="horae-prompt-textarea" rows="6" placeholder="留空使用默认提示词。可用 {{events}} 代表事件概要，{{fulltext}} 代表全文，{{user}} 代表主角名..."></textarea>
                             <div class="horae-prompt-char-count">
                                 <span id="horae-auto-summary-prompt-count">0</span> 字符
+                            </div>
+                        </div>
+
+                        <div class="horae-prompt-editor-group" style="margin-top: 12px;">
+                            <div class="horae-prompt-editor-header">
+                                <span data-i18n="prompts.autoResummaryPrompt">二次总结提示词（多级总结）</span>
+                                <button id="horae-btn-reset-auto-resummary-prompt" class="horae-btn-reset-prompt" data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
+                                    <i class="fa-solid fa-rotate-left"></i> 恢复默认
+                                </button>
+                            </div>
+                            <textarea id="horae-custom-auto-resummary-prompt" class="horae-prompt-textarea" rows="6" placeholder="留空使用默认提示词。可用 {{events}} 代表事件概要，{{count}} 代表事件数量，{{user}} 代表主角名..."></textarea>
+                            <div class="horae-prompt-char-count">
+                                <span id="horae-auto-resummary-prompt-count">0</span> 字符
                             </div>
                         </div>
 

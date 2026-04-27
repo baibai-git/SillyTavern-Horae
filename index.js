@@ -133,6 +133,7 @@ const DEFAULT_SETTINGS = {
     customAnalysisPrompt: '',    // 自定义AI分析提示词（空=使用默认）
     customCompressPrompt: '',    // 自定义剧情压缩提示词（空=使用默认）
     customAutoSummaryPrompt: '', // 自定义自动摘要提示词（空=使用默认；独立于手动压缩）
+    customAutoResummaryPrompt: '', // 自定义二次总结提示词（空=使用默认）
     aiScanIncludeNpc: false,     // AI摘要是否提取NPC
     aiScanIncludeAffection: false, // AI摘要是否提取好感度
     aiScanIncludeScene: false,    // AI摘要是否提取场景记忆
@@ -152,10 +153,11 @@ const DEFAULT_SETTINGS = {
     customRelationshipPrompt: '',  // 自定义关系网络提示词（空=使用默认）
     customMoodPrompt: '',          // 自定义情绪追踪提示词（空=使用默认）
     // 自动摘要
-    autoSummaryEnabled: false,      // 自动摘要开关
-    autoSummaryKeepRecent: 10,      // 保留最近N条消息不压缩
+    autoSummaryEnabled: true,      // 自动摘要开关
+    autoSummaryKeepRecent: 5,      // 保留最近N条消息不压缩
     autoSummaryBufferMode: 'messages', // 'messages' | 'tokens'
     autoSummaryBufferLimit: 20,     // 缓冲阈值（楼层数或Token数）
+    autoSummaryResummaryThreshold: 10, // <=0 关闭二次总结；>0 时同层摘要达到此值触发更高层摘要（2->3->4...）
     autoSummaryBatchMaxMsgs: 50,    // 单次摘要最大消息条数
     autoSummaryBatchMaxTokens: 80000, // 单次摘要最大Token数
     autoSummaryUseCustomApi: false, // 是否使用独立API端点
@@ -254,7 +256,7 @@ const DEFAULT_SETTINGS = {
     vectorRerankRecallThreshold: 0.3,  // Rerank 模式下的 embedding 召回阈值（远低于 vectorThreshold）
     vectorRerankMinScore: 0.95,         // Rerank 后的相关性最低分（低于此值丢弃）
     vectorFallbackEnabled: false,      // 首次召回为空时用上一楼 AI 回复内容重试
-    vectorFallbackMinScore: 0.5,       // 非 Rerank 模式下 fallback 触发阈值（最高分低于此值即 fallback）
+    vectorFallbackMinScore: 0.85,       // 非 Rerank 模式下 fallback 触发阈值（最高分低于此值即 fallback）
     vectorTopK: 25,
     vectorThreshold: 0.85,
     vectorFullTextCount: 3,
@@ -1392,6 +1394,13 @@ async function setMessagesHidden(chat, indices, hidden) {
     await getContext().saveChat();
 }
 
+/** 归一化摘要层级：缺失/非法一律回落到 1 */
+function _normalizeSummaryDepth(depth) {
+    const n = parseInt(depth, 10);
+    if (!Number.isFinite(n) || n < 1) return 1;
+    return Math.floor(n);
+}
+
 /** 从摘要条目中取回所有关联的消息索引 */
 function getSummaryMsgIndices(entry) {
     if (!entry) return [];
@@ -1405,6 +1414,99 @@ function getSummaryMsgIndices(entry) {
         for (let i = entry.range[0]; i <= entry.range[1]; i++) fromEvents.push(i);
     }
     return [...new Set(fromEvents)];
+}
+
+function _pickPreferredSummaryOwner(prev, next) {
+    if (!prev) return next;
+    if (!next) return prev;
+    if ((next.depth || 1) !== (prev.depth || 1)) {
+        return (next.depth || 1) > (prev.depth || 1) ? next : prev;
+    }
+    return (next.span || Number.MAX_SAFE_INTEGER) < (prev.span || Number.MAX_SAFE_INTEGER) ? next : prev;
+}
+
+async function _removeSummaryAndRestoreHierarchy(chat, summaryId) {
+    if (!chat?.length || !summaryId) return { removedEntry: null, restoredChildren: [] };
+    const firstMeta = chat?.[0]?.horae_meta;
+
+    let removedEntry = null;
+    if (Array.isArray(firstMeta?.autoSummaries)) {
+        const idx = firstMeta.autoSummaries.findIndex(s => s?.id === summaryId);
+        if (idx !== -1) {
+            removedEntry = firstMeta.autoSummaries.splice(idx, 1)[0];
+        }
+    }
+
+    const restoredChildren = [];
+    if (removedEntry && Array.isArray(removedEntry.mergedSummaries) && removedEntry.mergedSummaries.length && Array.isArray(firstMeta?.autoSummaries)) {
+        const existingIds = new Set(firstMeta.autoSummaries.filter(s => s?.id).map(s => s.id));
+        for (const child of removedEntry.mergedSummaries) {
+            if (!child?.id || existingIds.has(child.id)) continue;
+            firstMeta.autoSummaries.push(child);
+            existingIds.add(child.id);
+            restoredChildren.push(child);
+        }
+    }
+
+    const childOwnerByMsg = new Map();
+    for (const child of restoredChildren) {
+        const childId = child?.id;
+        if (!childId) continue;
+        const depth = _normalizeSummaryDepth(child?.depth);
+        const childRange = _getSummaryEntryRange(child);
+        const span = childRange ? Math.max(1, childRange[1] - childRange[0] + 1) : Number.MAX_SAFE_INTEGER;
+        const owner = { id: childId, depth, span };
+        for (const idx of getSummaryMsgIndices(child)) {
+            if (!Number.isInteger(idx)) continue;
+            const prev = childOwnerByMsg.get(idx);
+            childOwnerByMsg.set(idx, _pickPreferredSummaryOwner(prev, owner));
+        }
+    }
+
+    for (let i = 0; i < chat.length; i++) {
+        const meta = chat[i]?.horae_meta;
+        if (!Array.isArray(meta?.events)) continue;
+
+        meta.events = meta.events.filter(evt => evt?._summaryId !== summaryId);
+
+        const msgOwner = childOwnerByMsg.get(i);
+        for (const evt of meta.events) {
+            if (!evt || evt._compressedBy !== summaryId) continue;
+            if (msgOwner?.id) evt._compressedBy = msgOwner.id;
+            else delete evt._compressedBy;
+        }
+    }
+
+    if (restoredChildren.length > 0) {
+        cleanOrphanSummaries();
+    }
+
+    if (removedEntry) {
+        const affected = new Set(
+            getSummaryMsgIndices(removedEntry).filter(i => Number.isInteger(i) && i >= 0 && !!chat[i])
+        );
+
+        if (affected.size > 0) {
+            const shouldHide = new Set();
+            const activeSummaries = (firstMeta?.autoSummaries || []).filter(s => s?.id && s.active !== false);
+            for (const s of activeSummaries) {
+                for (const idx of getSummaryMsgIndices(s)) {
+                    if (affected.has(idx)) shouldHide.add(idx);
+                }
+            }
+
+            const toHide = [];
+            const toShow = [];
+            for (const idx of affected) {
+                if (shouldHide.has(idx)) toHide.push(idx);
+                else toShow.push(idx);
+            }
+            if (toShow.length > 0) await setMessagesHidden(chat, toShow, false);
+            if (toHide.length > 0) await setMessagesHidden(chat, toHide, true);
+        }
+    }
+
+    return { removedEntry, restoredChildren };
 }
 
 /** 切换摘要的 active 状态（摘要视图 ↔ 原始时间线） */
@@ -1429,32 +1531,7 @@ async function deleteSummary(summaryId) {
     if (!confirm(t('confirm.deleteSummary'))) return;
     
     const chat = horaeManager.getChat();
-    const firstMeta = chat?.[0]?.horae_meta;
-    
-    // 从 autoSummaries 中移除记录（如有）
-    let removedEntry = null;
-    if (firstMeta?.autoSummaries) {
-        const idx = firstMeta.autoSummaries.findIndex(s => s.id === summaryId);
-        if (idx !== -1) {
-            removedEntry = firstMeta.autoSummaries.splice(idx, 1)[0];
-        }
-    }
-    
-    // 清除所有消息中对应的 _compressedBy 标记和摘要事件（无论 autoSummaries 记录是否存在）
-    for (let i = 0; i < chat.length; i++) {
-        const meta = chat[i]?.horae_meta;
-        if (!meta?.events) continue;
-        meta.events = meta.events.filter(evt => evt._summaryId !== summaryId);
-        for (const evt of meta.events) {
-            if (evt._compressedBy === summaryId) delete evt._compressedBy;
-        }
-    }
-    
-    // 恢复被隐藏的楼层
-    if (removedEntry) {
-        const indices = getSummaryMsgIndices(removedEntry);
-        await setMessagesHidden(chat, indices, false);
-    }
+    await _removeSummaryAndRestoreHierarchy(chat, summaryId);
     
     await getContext().saveChat();
     updateTimelineDisplay();
@@ -2014,6 +2091,7 @@ function openTimelineSummaryModal(refMsgIdx, refEvtIdx, isAbove) {
             range: [rMin, rMax],
             summaryText,
             originalEvents: [],
+            depth: 1,
             active: true,
             createdAt: new Date().toISOString(),
             auto: false,
@@ -2343,21 +2421,37 @@ async function compressSelectedTimelineEvents() {
         const summaryId = `cs_${Date.now()}`;
         const coveredIndices = [];
         for (let i = rangeMin; i <= rangeMax; i++) coveredIndices.push(i);
+        let nextDepth = 1;
+        if (_selectedSummaryIds.size > 0) {
+            let maxDepth = 1;
+            for (const sid of _selectedSummaryIds) {
+                const old = _allSummaries.find(s => s.id === sid);
+                maxDepth = Math.max(maxDepth, _normalizeSummaryDepth(old?.depth));
+            }
+            nextDepth = maxDepth + 1;
+        }
         const summaryEntry = {
             id: summaryId,
             range: [rangeMin, rangeMax],
             coveredIndices,
             summaryText,
             originalEvents,
+            depth: nextDepth,
             active: true,
             createdAt: new Date().toISOString(),
             auto: false
         };
         // 剔除被合并的旧 entry，避免重叠
+        const mergedSummaries = [];
         if (_selectedSummaryIds.size > 0) {
-            firstMsg.horae_meta.autoSummaries = firstMsg.horae_meta.autoSummaries
-                .filter(s => !_selectedSummaryIds.has(s.id));
+            const retained = [];
+            for (const s of firstMsg.horae_meta.autoSummaries) {
+                if (s?.id && _selectedSummaryIds.has(s.id)) mergedSummaries.push(s);
+                else retained.push(s);
+            }
+            firstMsg.horae_meta.autoSummaries = retained;
         }
+        if (mergedSummaries.length > 0) summaryEntry.mergedSummaries = mergedSummaries;
         firstMsg.horae_meta.autoSummaries.push(summaryEntry);
 
         // 标记原始事件为已压缩，并清掉旧摘要卡片
@@ -2427,7 +2521,6 @@ async function deleteSelectedTimelineEvents() {
     if (!confirmed) return;
     
     const chat = horaeManager.getChat();
-    const firstMeta = chat?.[0]?.horae_meta;
     
     // 按消息分组，倒序删除事件索引
     const msgMap = new Map();
@@ -2464,25 +2557,10 @@ async function deleteSelectedTimelineEvents() {
         }
     }
     
-    // 级联清理：删除摘要事件时同步清理 autoSummaries、_compressedBy、is_hidden
-    if (deletedSummaryIds.size > 0 && firstMeta?.autoSummaries) {
+    // 级联清理：删除摘要事件时同步清理并回退到子摘要层（如有）
+    if (deletedSummaryIds.size > 0) {
         for (const summaryId of deletedSummaryIds) {
-            const idx = firstMeta.autoSummaries.findIndex(s => s.id === summaryId);
-            let removedEntry = null;
-            if (idx !== -1) {
-                removedEntry = firstMeta.autoSummaries.splice(idx, 1)[0];
-            }
-            for (let i = 0; i < chat.length; i++) {
-                const meta = chat[i]?.horae_meta;
-                if (!meta?.events) continue;
-                for (const evt of meta.events) {
-                    if (evt._compressedBy === summaryId) delete evt._compressedBy;
-                }
-            }
-            if (removedEntry) {
-                const indices = getSummaryMsgIndices(removedEntry);
-                await setMessagesHidden(chat, indices, false);
-            }
+            await _removeSummaryAndRestoreHierarchy(chat, summaryId);
         }
     }
     
@@ -11341,7 +11419,7 @@ function initSettingsEvents() {
     // ── 提示词预设存档 ──
     const _PRESET_PROMPT_KEYS = [
         'customSystemPrompt', 'customBatchPrompt', 'customAnalysisPrompt',
-        'customCompressPrompt', 'customAutoSummaryPrompt', 'customTablesPrompt',
+        'customCompressPrompt', 'customAutoSummaryPrompt', 'customAutoResummaryPrompt', 'customTablesPrompt',
         'customLocationPrompt', 'customRelationshipPrompt', 'customMoodPrompt',
         'customRpgPrompt'
     ];
@@ -11359,6 +11437,7 @@ function initSettingsEvents() {
             ['customAnalysisPrompt', 'horae-custom-analysis-prompt', 'horae-analysis-prompt-count', () => getDefaultAnalysisPrompt()],
             ['customCompressPrompt', 'horae-custom-compress-prompt', 'horae-compress-prompt-count', () => getDefaultCompressPrompt()],
             ['customAutoSummaryPrompt', 'horae-custom-auto-summary-prompt', 'horae-auto-summary-prompt-count', () => getDefaultAutoSummaryPrompt()],
+            ['customAutoResummaryPrompt', 'horae-custom-auto-resummary-prompt', 'horae-auto-resummary-prompt-count', () => getDefaultAutoResummaryPrompt()],
             ['customTablesPrompt', 'horae-custom-tables-prompt', 'horae-tables-prompt-count', () => horaeManager.getDefaultTablesPrompt()],
             ['customLocationPrompt', 'horae-custom-location-prompt', 'horae-location-prompt-count', () => horaeManager.getDefaultLocationPrompt()],
             ['customRelationshipPrompt', 'horae-custom-relationship-prompt', 'horae-relationship-prompt-count', () => horaeManager.getDefaultRelationshipPrompt()],
@@ -11476,6 +11555,7 @@ function initSettingsEvents() {
             ['customAnalysisPrompt', 'horae-custom-analysis-prompt', 'horae-analysis-prompt-count', () => getDefaultAnalysisPrompt()],
             ['customCompressPrompt', 'horae-custom-compress-prompt', 'horae-compress-prompt-count', () => getDefaultCompressPrompt()],
             ['customAutoSummaryPrompt', 'horae-custom-auto-summary-prompt', 'horae-auto-summary-prompt-count', () => getDefaultAutoSummaryPrompt()],
+            ['customAutoResummaryPrompt', 'horae-custom-auto-resummary-prompt', 'horae-auto-resummary-prompt-count', () => getDefaultAutoResummaryPrompt()],
             ['customTablesPrompt', 'horae-custom-tables-prompt', 'horae-tables-prompt-count', () => horaeManager.getDefaultTablesPrompt()],
             ['customLocationPrompt', 'horae-custom-location-prompt', 'horae-location-prompt-count', () => horaeManager.getDefaultLocationPrompt()],
             ['customRelationshipPrompt', 'horae-custom-relationship-prompt', 'horae-relationship-prompt-count', () => horaeManager.getDefaultRelationshipPrompt()],
@@ -11809,6 +11889,18 @@ function initSettingsEvents() {
         this.value = settings.autoSummaryBufferLimit;
         saveSettings();
     });
+    $('#horae-setting-auto-summary-resummary-threshold').on('change', function() {
+        const raw = parseInt(this.value, 10);
+        if (!Number.isFinite(raw)) {
+            settings.autoSummaryResummaryThreshold = 10;
+        } else if (raw <= 0) {
+            settings.autoSummaryResummaryThreshold = 0;
+        } else {
+            settings.autoSummaryResummaryThreshold = Math.max(2, raw);
+        }
+        this.value = settings.autoSummaryResummaryThreshold;
+        saveSettings();
+    });
     $('#horae-setting-auto-summary-batch-msgs').on('change', function() {
         settings.autoSummaryBatchMaxMsgs = Math.max(5, parseInt(this.value) || 50);
         this.value = settings.autoSummaryBatchMaxMsgs;
@@ -12017,6 +12109,24 @@ function initSettingsEvents() {
         const def = getDefaultAutoSummaryPrompt();
         $('#horae-custom-auto-summary-prompt').val(def);
         $('#horae-auto-summary-prompt-count').text(def.length);
+        showToast(t('toast.promptsRestored'), 'success');
+    });
+
+    // 二次总结提示词
+    $('#horae-custom-auto-resummary-prompt').on('input', function() {
+        const val = this.value;
+        settings.customAutoResummaryPrompt = (val.trim() === getDefaultAutoResummaryPrompt().trim()) ? '' : val;
+        $('#horae-auto-resummary-prompt-count').text(val.length);
+        saveSettings();
+    });
+
+    $('#horae-btn-reset-auto-resummary-prompt').on('click', () => {
+        if (!confirm(t('confirm.restoreRpgPrompts'))) return;
+        settings.customAutoResummaryPrompt = '';
+        saveSettings();
+        const def = getDefaultAutoResummaryPrompt();
+        $('#horae-custom-auto-resummary-prompt').val(def);
+        $('#horae-auto-resummary-prompt-count').text(def.length);
         showToast(t('toast.promptsRestored'), 'success');
     });
 
@@ -12294,6 +12404,7 @@ function _refreshSystemPromptDisplay() {
         ['customAnalysisPrompt', 'horae-custom-analysis-prompt', 'horae-analysis-prompt-count', () => getDefaultAnalysisPrompt()],
         ['customCompressPrompt', 'horae-custom-compress-prompt', 'horae-compress-prompt-count', () => getDefaultCompressPrompt()],
         ['customAutoSummaryPrompt', 'horae-custom-auto-summary-prompt', 'horae-auto-summary-prompt-count', () => getDefaultAutoSummaryPrompt()],
+        ['customAutoResummaryPrompt', 'horae-custom-auto-resummary-prompt', 'horae-auto-resummary-prompt-count', () => getDefaultAutoResummaryPrompt()],
         ['customTablesPrompt', 'horae-custom-tables-prompt', 'horae-tables-prompt-count', () => horaeManager.getDefaultTablesPrompt()],
         ['customLocationPrompt', 'horae-custom-location-prompt', 'horae-location-prompt-count', () => horaeManager.getDefaultLocationPrompt()],
         ['customRelationshipPrompt', 'horae-custom-relationship-prompt', 'horae-relationship-prompt-count', () => horaeManager.getDefaultRelationshipPrompt()],
@@ -12384,6 +12495,11 @@ function syncSettingsToUI() {
     $('#horae-setting-auto-summary-keep').val(settings.autoSummaryKeepRecent || 10);
     $('#horae-setting-auto-summary-mode').val(settings.autoSummaryBufferMode || 'messages');
     $('#horae-setting-auto-summary-limit').val(settings.autoSummaryBufferLimit || 20);
+    {
+        const raw = parseInt(settings.autoSummaryResummaryThreshold, 10);
+        const thresholdVal = Number.isFinite(raw) ? raw : 10;
+        $('#horae-setting-auto-summary-resummary-threshold').val(thresholdVal);
+    }
     $('#horae-setting-auto-summary-batch-msgs').val(settings.autoSummaryBatchMaxMsgs || 50);
     $('#horae-setting-auto-summary-batch-tokens').val(settings.autoSummaryBatchMaxTokens || 80000);
     $('#horae-setting-auto-summary-custom-api').prop('checked', !!settings.autoSummaryUseCustomApi);
@@ -12408,6 +12524,7 @@ function syncSettingsToUI() {
     const analysisPromptVal = settings.customAnalysisPrompt || getDefaultAnalysisPrompt();
     const compressPromptVal = settings.customCompressPrompt || getDefaultCompressPrompt();
     const autoSumPromptVal = settings.customAutoSummaryPrompt || getDefaultAutoSummaryPrompt();
+    const autoResumPromptVal = settings.customAutoResummaryPrompt || getDefaultAutoResummaryPrompt();
     const tablesPromptVal = settings.customTablesPrompt || horaeManager.getDefaultTablesPrompt();
     const locationPromptVal = settings.customLocationPrompt || horaeManager.getDefaultLocationPrompt();
     const relPromptVal = settings.customRelationshipPrompt || horaeManager.getDefaultRelationshipPrompt();
@@ -12418,6 +12535,7 @@ function syncSettingsToUI() {
     $('#horae-custom-analysis-prompt').val(analysisPromptVal);
     $('#horae-custom-compress-prompt').val(compressPromptVal);
     $('#horae-custom-auto-summary-prompt').val(autoSumPromptVal);
+    $('#horae-custom-auto-resummary-prompt').val(autoResumPromptVal);
     $('#horae-custom-tables-prompt').val(tablesPromptVal);
     $('#horae-custom-location-prompt').val(locationPromptVal);
     $('#horae-custom-relationship-prompt').val(relPromptVal);
@@ -12428,6 +12546,7 @@ function syncSettingsToUI() {
     $('#horae-analysis-prompt-count').text(analysisPromptVal.length);
     $('#horae-compress-prompt-count').text(compressPromptVal.length);
     $('#horae-auto-summary-prompt-count').text(autoSumPromptVal.length);
+    $('#horae-auto-resummary-prompt-count').text(autoResumPromptVal.length);
     $('#horae-tables-prompt-count').text(tablesPromptVal.length);
     $('#horae-location-prompt-count').text(locationPromptVal.length);
     $('#horae-relationship-prompt-count').text(relPromptVal.length);
@@ -13213,7 +13332,534 @@ async function generateForSummary(prompt) {
     } else if (!useCustom) {
         console.log('[Horae] 副API未启用，使用主API');
     }
-    return await _generateForAiTasks(prompt);
+    const context = getContext();
+    const shouldMarkNoRecall = !!(
+        context?.mainApi === 'openai' &&
+        settings.injectContext &&
+        settings.vectorEnabled
+    );
+    const shouldSkipContextInject = !!(
+        context?.mainApi === 'openai' &&
+        settings.injectContext
+    );
+    return await _generateForAiTasks(prompt, {
+        noVectorRecallMarker: shouldMarkNoRecall,
+        noContextInjectionMarker: shouldSkipContextInject,
+    });
+}
+
+function _getSummaryEntryRange(entry) {
+    if (!entry) return null;
+    if (Array.isArray(entry.range) && entry.range.length >= 2) {
+        const start = Number(entry.range[0]);
+        const end = Number(entry.range[1]);
+        if (Number.isInteger(start) && Number.isInteger(end)) {
+            return [Math.min(start, end), Math.max(start, end)];
+        }
+    }
+    const indices = getSummaryMsgIndices(entry).filter(Number.isInteger);
+    if (!indices.length) return null;
+    let min = Infinity, max = -Infinity;
+    for (const idx of indices) {
+        if (idx < min) min = idx;
+        if (idx > max) max = idx;
+    }
+    return Number.isFinite(min) && Number.isFinite(max) ? [min, max] : null;
+}
+
+function _buildAutoSummaryPrompt(userName, eventText, sourceText, count) {
+    const autoSumTemplate = settings.customAutoSummaryPrompt || getDefaultAutoSummaryPrompt();
+    return autoSumTemplate
+        .replace(/\{\{events\}\}/gi, eventText || '')
+        .replace(/\{\{fulltext\}\}/gi, sourceText || '')
+        .replace(/\{\{count\}\}/gi, String(count || 0))
+        .replace(/\{\{user\}\}/gi, userName || t('ui.protagonist'));
+}
+
+function _buildAutoResummaryPrompt(userName, eventText, count) {
+    const autoResumTemplate = settings.customAutoResummaryPrompt || getDefaultAutoResummaryPrompt();
+    return autoResumTemplate
+        .replace(/\{\{events\}\}/gi, eventText || '')
+        .replace(/\{\{fulltext\}\}/gi, '')
+        .replace(/\{\{count\}\}/gi, String(count || 0))
+        .replace(/\{\{user\}\}/gi, userName || t('ui.protagonist'));
+}
+
+function _cleanSummaryText(raw) {
+    if (!raw || !String(raw).trim()) return '';
+    return String(raw).trim()
+        .replace(/<think(?:ing)?[\s>][\s\S]*?<\/think(?:ing)?>/gi, '')
+        .replace(/<horae>[\s\S]*?<\/horae>/gi, '')
+        .replace(/<horaeevent>[\s\S]*?<\/horaeevent>/gi, '')
+        .replace(/<!--horae[\s\S]*?-->/gi, '')
+        .trim();
+}
+
+function _splitMsgIndicesByLimits(chat, indices, maxMsgs, maxTokens) {
+    const sorted = [...new Set(indices || [])]
+        .filter(i => Number.isInteger(i) && i > 0 && chat?.[i])
+        .sort((a, b) => a - b);
+    if (!sorted.length) return [];
+    const chunks = [];
+    let current = [];
+    let tokenCount = 0;
+    for (const idx of sorted) {
+        const tok = estimateTokens(chat[idx]?.mes || '');
+        if (current.length > 0 && (current.length >= maxMsgs || tokenCount + tok > maxTokens)) {
+            chunks.push(current);
+            current = [];
+            tokenCount = 0;
+        }
+        current.push(idx);
+        tokenCount += tok;
+    }
+    if (current.length > 0) chunks.push(current);
+    return chunks;
+}
+
+function _splitTextsByLimits(texts, maxMsgs, maxTokens) {
+    const list = (texts || []).filter(t => typeof t === 'string' && t.trim());
+    if (!list.length) return [];
+    const groups = [];
+    let current = [];
+    let tokenCount = 0;
+    for (const text of list) {
+        const tok = estimateTokens(text);
+        if (current.length > 0 && (current.length >= maxMsgs || tokenCount + tok > maxTokens)) {
+            groups.push(current);
+            current = [];
+            tokenCount = 0;
+        }
+        current.push(text);
+        tokenCount += tok;
+    }
+    if (current.length > 0) groups.push(current);
+    return groups;
+}
+
+function _splitResummaryEventsByLimits(eventRecords, maxEvents, maxTokens) {
+    const records = (eventRecords || [])
+        .filter(e => e && typeof e.summary === 'string' && e.summary.trim())
+        .slice()
+        .sort((a, b) => (a.msgIdx ?? 0) - (b.msgIdx ?? 0));
+    if (!records.length) return [];
+
+    const chunks = [];
+    let current = [];
+    let tokenCount = 0;
+    for (const e of records) {
+        const line = `[${e.level || '一般'}] ${e.date || '?'}${e.time ? ' ' + e.time : ''}: ${e.summary}`;
+        const tok = estimateTokens(line);
+        if (current.length > 0 && (current.length >= maxEvents || tokenCount + tok > maxTokens)) {
+            chunks.push(current);
+            current = [];
+            tokenCount = 0;
+        }
+        current.push(e);
+        tokenCount += tok;
+    }
+    if (current.length > 0) chunks.push(current);
+    return chunks;
+}
+
+function _pickAutoResummaryPlan(chat, cutoff, threshold) {
+    const summaries = chat?.[0]?.horae_meta?.autoSummaries;
+    if (!Array.isArray(summaries) || summaries.length === 0) return null;
+
+    const normalized = [];
+    for (const s of summaries) {
+        if (!s?.id || s.active === false) continue;
+        const depth = _normalizeSummaryDepth(s.depth);
+        const range = _getSummaryEntryRange(s);
+        if (!range) continue;
+        const [start, end] = range;
+        if (!Number.isInteger(start) || !Number.isInteger(end)) continue;
+        normalized.push({ id: s.id, depth, start, end, entry: s });
+    }
+
+    const eligible = [];
+    for (const s of normalized) {
+        const { depth, start, end } = s;
+        if (start < 1 || end >= cutoff) continue;
+        const overlappedByHigher = normalized.some(h =>
+            h.depth > depth && !(h.end < start || h.start > end)
+        );
+        if (overlappedByHigher) continue;
+        eligible.push(s);
+    }
+    if (!eligible.length) return null;
+
+    const byDepth = new Map();
+    for (const item of eligible) {
+        if (!byDepth.has(item.depth)) byDepth.set(item.depth, []);
+        byDepth.get(item.depth).push(item);
+    }
+
+    const depths = [...byDepth.keys()].sort((a, b) => a - b);
+    for (const depth of depths) {
+        const sameDepth = byDepth.get(depth)
+            .slice()
+            .sort((a, b) => a.start - b.start || a.end - b.end);
+        if (sameDepth.length < threshold) continue;
+
+        const anchors = sameDepth.slice(0, threshold);
+        let windowStart = Math.min(...anchors.map(a => a.start));
+        let windowEnd = Math.max(...anchors.map(a => a.end));
+
+        const mergedMap = new Map();
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const s of eligible) {
+                if (s.depth > depth) continue;
+                if (s.end < windowStart || s.start > windowEnd) continue;
+                if (!mergedMap.has(s.id)) {
+                    mergedMap.set(s.id, s);
+                    changed = true;
+                }
+                if (s.start < windowStart) {
+                    windowStart = s.start;
+                    changed = true;
+                }
+                if (s.end > windowEnd) {
+                    windowEnd = s.end;
+                    changed = true;
+                }
+            }
+        }
+
+        const mergedEntries = [...mergedMap.values()]
+            .sort((a, b) => a.start - b.start || a.end - b.end);
+        const sameDepthCount = mergedEntries.filter(s => s.depth === depth).length;
+        if (sameDepthCount < threshold) continue;
+
+        return {
+            depth,
+            nextDepth: depth + 1,
+            windowStart,
+            windowEnd,
+            mergedEntries,
+        };
+    }
+    return null;
+}
+
+function _collectAutoResummaryPayload(chat, plan, cutoff) {
+    if (!plan?.mergedEntries?.length) return null;
+    const allSummaries = chat?.[0]?.horae_meta?.autoSummaries || [];
+    const mergedSummaryIds = new Set(plan.mergedEntries.map(s => s.id));
+
+    const blockedByHigherDepth = new Set();
+    for (const s of allSummaries) {
+        if (!s?.id || s.active === false || mergedSummaryIds.has(s.id)) continue;
+        const depth = _normalizeSummaryDepth(s.depth);
+        if (depth <= plan.depth) continue;
+        const indices = getSummaryMsgIndices(s);
+        for (const idx of indices) {
+            if (Number.isInteger(idx) && idx >= plan.windowStart && idx <= plan.windowEnd && idx < cutoff) {
+                blockedByHigherDepth.add(idx);
+            }
+        }
+    }
+
+    const coveredSet = new Set();
+    for (let i = plan.windowStart; i <= plan.windowEnd; i++) {
+        if (i <= 0 || i >= cutoff || !chat?.[i]) continue;
+        if (blockedByHigherDepth.has(i)) continue;
+        if (chat[i]?.horae_meta?._skipHorae) continue;
+        coveredSet.add(i);
+    }
+    for (const s of plan.mergedEntries) {
+        const indices = getSummaryMsgIndices(s.entry);
+        for (const idx of indices) {
+            if (!Number.isInteger(idx) || idx <= 0 || idx >= cutoff || !chat?.[idx]) continue;
+            if (blockedByHigherDepth.has(idx)) continue;
+            coveredSet.add(idx);
+        }
+    }
+    const coveredIndices = [...coveredSet].sort((a, b) => a - b);
+    if (!coveredIndices.length) return null;
+
+    const activeSummaryIds = new Set(
+        allSummaries
+            .filter(s => s?.id && s.active !== false)
+            .map(s => s.id)
+    );
+    const summarizedByMergedIndices = new Set();
+    for (const s of plan.mergedEntries) {
+        const indices = getSummaryMsgIndices(s.entry);
+        for (const idx of indices) {
+            if (Number.isInteger(idx)) summarizedByMergedIndices.add(idx);
+        }
+    }
+
+    const eventRecords = [];
+    const eventSeen = new Set();
+    const sortedMergedEntries = [...plan.mergedEntries]
+        .sort((a, b) => a.start - b.start || a.end - b.end);
+    for (const s of sortedMergedEntries) {
+        const cardText = (typeof s.entry?.summaryText === 'string' && s.entry.summaryText.trim())
+            ? s.entry.summaryText.trim()
+            : (s.entry?.summary || s.entry?.title || '');
+        if (!cardText) continue;
+        const anchorIdx = coveredIndices.find(i => i >= s.start && i <= s.end) ?? s.start ?? coveredIndices[0];
+        const date = chat[anchorIdx]?.horae_meta?.timestamp?.story_date || '?';
+        const time = chat[anchorIdx]?.horae_meta?.timestamp?.story_time || '';
+        const key = `summary|${s.id}|${cardText}`;
+        if (eventSeen.has(key)) continue;
+        eventSeen.add(key);
+        eventRecords.push({
+            msgIdx: anchorIdx,
+            date,
+            time,
+            level: `摘要L${s.depth}`,
+            summary: cardText,
+        });
+    }
+
+    // 仅补充窗口内“未被任何活跃摘要覆盖”的原始事件
+    for (const msgIdx of coveredIndices) {
+        if (summarizedByMergedIndices.has(msgIdx)) continue;
+        const meta = chat[msgIdx]?.horae_meta;
+        if (!meta) continue;
+        if (meta.event && !meta.events) {
+            meta.events = [meta.event];
+            delete meta.event;
+        }
+        if (!Array.isArray(meta.events)) continue;
+
+        const date = meta.timestamp?.story_date || '?';
+        const time = meta.timestamp?.story_time || '';
+        for (let evtIdx = 0; evtIdx < meta.events.length; evtIdx++) {
+            const evt = meta.events[evtIdx];
+            if (!evt?.summary || evt._carryoverSeed) continue;
+            if (evt.isSummary || evt._summaryId) continue;
+            if (evt._compressedBy && activeSummaryIds.has(evt._compressedBy)) continue;
+
+            const key = `${msgIdx}|${evtIdx}|${date}|${time}|${evt.level || '一般'}|${evt.summary}`;
+            if (eventSeen.has(key)) continue;
+            eventSeen.add(key);
+            eventRecords.push({
+                msgIdx,
+                date,
+                time,
+                level: evt.level || '一般',
+                summary: evt.summary,
+            });
+        }
+    }
+
+    eventRecords.sort((a, b) => a.msgIdx - b.msgIdx);
+
+    const originalMap = new Map();
+    const pushOriginal = (item) => {
+        if (!item || typeof item !== 'object') return;
+        const msgIdx = Number.isInteger(item.msgIdx) ? item.msgIdx : -1;
+        const evtIdx = Number.isInteger(item.evtIdx) ? item.evtIdx : -1;
+        const sum = item?.event?.summary || '';
+        const key = `${msgIdx}|${evtIdx}|${sum}`;
+        if (originalMap.has(key)) return;
+        originalMap.set(key, {
+            msgIdx,
+            evtIdx,
+            event: item.event ? { ...item.event } : item.event,
+            timestamp: item.timestamp || null,
+        });
+    };
+
+    for (const s of plan.mergedEntries) {
+        const inherited = s.entry?.originalEvents;
+        if (Array.isArray(inherited)) {
+            for (const item of inherited) pushOriginal(item);
+        }
+    }
+    for (const msgIdx of coveredIndices) {
+        const meta = chat[msgIdx]?.horae_meta;
+        if (!meta) continue;
+        if (meta.event && !meta.events) {
+            meta.events = [meta.event];
+            delete meta.event;
+        }
+        if (!Array.isArray(meta.events)) continue;
+        for (let evtIdx = 0; evtIdx < meta.events.length; evtIdx++) {
+            const evt = meta.events[evtIdx];
+            if (!evt || evt.isSummary || evt._summaryId || evt._carryoverSeed) continue;
+            pushOriginal({
+                msgIdx,
+                evtIdx,
+                event: { ...evt },
+                timestamp: meta.timestamp || null,
+            });
+        }
+    }
+    const originalEvents = [...originalMap.values()];
+
+    return {
+        depth: plan.depth,
+        nextDepth: plan.nextDepth,
+        mergedEntries: plan.mergedEntries,
+        mergedSummaryIds,
+        coveredIndices,
+        range: [coveredIndices[0], coveredIndices[coveredIndices.length - 1]],
+        eventRecords,
+        originalEvents,
+    };
+}
+
+async function _generateSummaryFromResummaryPayload(chat, payload, userName) {
+    const maxMsgs = Math.max(5, parseInt(settings.autoSummaryBatchMaxMsgs, 10) || 50);
+    const maxTokens = Math.max(10000, parseInt(settings.autoSummaryBatchMaxTokens, 10) || 80000);
+    const chunks = _splitResummaryEventsByLimits(payload.eventRecords, maxMsgs, maxTokens);
+    if (!chunks.length) return '';
+
+    const chunkSummaries = [];
+    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+        const chunk = chunks[chunkIdx];
+        const remainChunks = chunks.length - chunkIdx - 1;
+        const remainHint = ` (L${payload.depth}->L${payload.nextDepth}${remainChunks > 0 ? `, ${remainChunks} remaining` : ''})`;
+        showToast(t('toast.autoSummaryProgress', {
+            batch: chunkIdx + 1,
+            total: chunks.length,
+            remaining: remainHint
+        }), 'info');
+
+        const eventText = chunk.map(e => `[${e.level}] ${e.date}${e.time ? ' ' + e.time : ''}: ${e.summary}`).join('\n');
+
+        const prompt = _buildAutoResummaryPrompt(userName, eventText, chunk.length);
+        const response = await generateForSummary(prompt);
+        const cleaned = _cleanSummaryText(response);
+        if (!cleaned) return '';
+        chunkSummaries.push(cleaned);
+    }
+    if (chunkSummaries.length === 1) return chunkSummaries[0];
+
+    let current = chunkSummaries.slice();
+    let guard = 0;
+    while (current.length > 1 && guard < 8) {
+        guard++;
+        let groups = _splitTextsByLimits(current, maxMsgs, maxTokens);
+        if (groups.length === current.length && current.length > 1) {
+            groups = [];
+            for (let i = 0; i < current.length; i += 2) {
+                groups.push(current.slice(i, i + 2));
+            }
+        }
+
+        const next = [];
+        for (const group of groups) {
+            const eventText = group.map((text, i) => `[段${i + 1}] ${text}`).join('\n');
+            const prompt = _buildAutoResummaryPrompt(userName, eventText, group.length);
+            const response = await generateForSummary(prompt);
+            const cleaned = _cleanSummaryText(response);
+            if (!cleaned) return '';
+            next.push(cleaned);
+        }
+        current = next;
+    }
+    return current[0] || '';
+}
+
+async function _applyAutoResummary(chat, payload, summaryText) {
+    if (!payload?.coveredIndices?.length || !summaryText) return null;
+    const firstMsg = chat?.[0];
+    if (!firstMsg) return null;
+    if (!firstMsg.horae_meta) firstMsg.horae_meta = createEmptyMeta();
+    if (!Array.isArray(firstMsg.horae_meta.autoSummaries)) firstMsg.horae_meta.autoSummaries = [];
+
+    const summaryId = `as_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const mergedSummaryIds = payload.mergedSummaryIds;
+    const mergedSummaries = [];
+    const retainedSummaries = [];
+    for (const s of firstMsg.horae_meta.autoSummaries) {
+        if (s?.id && mergedSummaryIds.has(s.id)) mergedSummaries.push(s);
+        else retainedSummaries.push(s);
+    }
+    firstMsg.horae_meta.autoSummaries = retainedSummaries;
+
+    const summaryEntry = {
+        id: summaryId,
+        range: [...payload.range],
+        coveredIndices: [...payload.coveredIndices],
+        summaryText,
+        originalEvents: payload.originalEvents || [],
+        depth: payload.nextDepth,
+        active: true,
+        createdAt: new Date().toISOString(),
+        auto: true
+    };
+    if (mergedSummaries.length > 0) summaryEntry.mergedSummaries = mergedSummaries;
+    firstMsg.horae_meta.autoSummaries.push(summaryEntry);
+
+    for (const msgIdx of payload.coveredIndices) {
+        const meta = chat[msgIdx]?.horae_meta;
+        if (!meta) continue;
+        if (meta.event && !meta.events) {
+            meta.events = [meta.event];
+            delete meta.event;
+        }
+        if (!Array.isArray(meta.events)) continue;
+
+        meta.events = meta.events.filter(evt => !(evt?._summaryId && mergedSummaryIds.has(evt._summaryId)));
+        for (const evt of meta.events) {
+            if (!evt || evt.isSummary || evt._summaryId || evt._carryoverSeed) continue;
+            if (!evt._compressedBy || mergedSummaryIds.has(evt._compressedBy)) {
+                evt._compressedBy = summaryId;
+            }
+        }
+    }
+
+    const targetIdx = payload.range[0];
+    if (Number.isInteger(targetIdx) && chat[targetIdx]) {
+        if (!chat[targetIdx].horae_meta) chat[targetIdx].horae_meta = createEmptyMeta();
+        if (!Array.isArray(chat[targetIdx].horae_meta.events)) chat[targetIdx].horae_meta.events = [];
+        chat[targetIdx].horae_meta.events.push({
+            is_important: true,
+            level: '摘要',
+            summary: summaryText,
+            isSummary: true,
+            _summaryId: summaryId
+        });
+    }
+
+    await setMessagesHidden(chat, [...payload.coveredIndices], true);
+    return summaryId;
+}
+
+async function _runAutoResummaryIfNeeded(chat, cutoff) {
+    const rawThreshold = parseInt(settings.autoSummaryResummaryThreshold, 10);
+    const threshold = Number.isFinite(rawThreshold) ? rawThreshold : 10;
+    if (threshold <= 0) return 0;
+    const effectiveThreshold = Math.max(2, threshold);
+
+    const maxRounds = 4;
+    let rounds = 0;
+    while (rounds < maxRounds) {
+        const plan = _pickAutoResummaryPlan(chat, cutoff, effectiveThreshold);
+        if (!plan) break;
+
+        const payload = _collectAutoResummaryPayload(chat, plan, cutoff);
+        if (!payload?.coveredIndices?.length) break;
+
+        showToast(t('toast.autoSummaryProgress', {
+            batch: payload.coveredIndices.length,
+            total: payload.coveredIndices.length,
+            remaining: ` (L${payload.depth}->L${payload.nextDepth})`
+        }), 'info');
+
+        const context = getContext();
+        const userName = context?.name1 || t('ui.protagonist');
+        const summaryText = await _generateSummaryFromResummaryPayload(chat, payload, userName);
+        if (!summaryText) break;
+
+        const summaryId = await _applyAutoResummary(chat, payload, summaryText);
+        if (!summaryId) break;
+
+        rounds++;
+        await context.saveChat();
+        updateTimelineDisplay();
+        showToast(t('toast.autoSummaryDone', {from: payload.range[0], to: payload.range[1]}), 'success');
+    }
+    return rounds;
 }
 
 function _syncSubApiSettingsFromDom() {
@@ -13742,6 +14388,91 @@ async function _geminiNativeRequest(prompt, rawUrl, model, apiKey) {
     return text;
 }
 
+function _collectTailContinuousAutoSummaryEvents(chat, cutoff, summarizedIndices, manualSummaryMsgIndices) {
+    if (!Array.isArray(chat) || cutoff <= 0) return [];
+
+    const stream = [];
+    for (let i = 0; i < cutoff; i++) {
+        const msg = chat[i];
+        if (!msg) continue;
+        const meta = msg.horae_meta;
+        if (!meta || meta._skipHorae) continue;
+        if (meta.event && !meta.events) {
+            meta.events = [meta.event];
+            delete meta.event;
+        }
+        if (!Array.isArray(meta.events)) continue;
+        for (let evtIdx = 0; evtIdx < meta.events.length; evtIdx++) {
+            const evt = meta.events[evtIdx];
+            if (!evt?.summary) continue;
+            stream.push({ msgIdx: i, evtIdx, event: evt, meta, msg });
+        }
+    }
+    if (!stream.length) return [];
+
+    const pickedReverse = [];
+    let started = false;
+    for (let p = stream.length - 1; p >= 0; p--) {
+        const item = stream[p];
+        const evt = item.event;
+        const msgIdx = item.msgIdx;
+
+        const msgBlocked = !!item.msg?.is_hidden
+            || summarizedIndices.has(msgIdx)
+            || manualSummaryMsgIndices.has(msgIdx)
+            || !!item.meta?._skipHorae;
+        const evtBlocked = !!evt?._carryoverSeed
+            || !!evt?.isSummary
+            || !!evt?._summaryId
+            || !!evt?._compressedBy;
+        const isUncompressedTimeline = !!evt?.summary && !msgBlocked && !evtBlocked;
+
+        if (!started) {
+            if (!isUncompressedTimeline) break;
+            started = true;
+            pickedReverse.push(item);
+            continue;
+        }
+
+        if (!isUncompressedTimeline) break;
+        pickedReverse.push(item);
+    }
+
+    if (!pickedReverse.length) return [];
+    return pickedReverse.reverse().map(item => ({
+        msgIdx: item.msgIdx,
+        evtIdx: item.evtIdx,
+        date: item.meta?.timestamp?.story_date || '?',
+        time: item.meta?.timestamp?.story_time || '',
+        level: item.event?.level || '一般',
+        summary: item.event?.summary || ''
+    }));
+}
+
+function _pickAutoSummaryBatchEvents(chat, eventCandidates, maxEvents, maxTokens) {
+    const selected = [];
+    const msgSet = new Set();
+    let tokenCount = 0;
+
+    for (const e of eventCandidates || []) {
+        if (!Number.isInteger(e?.msgIdx) || !chat?.[e.msgIdx]) continue;
+        const addTok = msgSet.has(e.msgIdx) ? 0 : estimateTokens(chat[e.msgIdx]?.mes || '');
+        if (selected.length > 0 && (selected.length >= maxEvents || tokenCount + addTok > maxTokens)) break;
+        selected.push(e);
+        if (!msgSet.has(e.msgIdx)) {
+            msgSet.add(e.msgIdx);
+            tokenCount += addTok;
+        }
+    }
+
+    return {
+        events: selected,
+        msgIndices: [...msgSet].sort((a, b) => a - b),
+        tokenCount,
+        remainingEvents: Math.max(0, (eventCandidates?.length || 0) - selected.length),
+    };
+}
+
 /** 自动摘要：检查是否需要触发 */
 async function checkAutoSummary() {
     if (!settings.enabled || !settings.autoSummaryEnabled || !settings.sendTimeline) return;
@@ -13758,6 +14489,9 @@ async function checkAutoSummary() {
         
         const totalMsgs = chat.length;
         const cutoff = Math.max(1, totalMsgs - keepRecent);
+
+        // 独立检查：当同层摘要达到阈值时，自动进行更高层级再总结（可级联）
+        await _runAutoResummaryIfNeeded(chat, cutoff);
         
         // 收集已被摘要覆盖的消息索引（含展开状态，避免重复摘要）
         // 优先用 coveredIndices（实际压缩集合），旧 entry 才回退到 range 全展开
@@ -13774,7 +14508,8 @@ async function checkAutoSummary() {
         // 兜底：扫描所有消息，找出含有手动插入摘要(isSummary)事件的消息索引
         const manualSummaryMsgIndices = new Set();
         for (let i = 0; i < cutoff; i++) {
-            const evts = chat[i]?.horae_meta?.events;
+            const meta = chat[i]?.horae_meta;
+            const evts = meta?.events || (meta?.event ? [meta.event] : null);
             if (!evts?.length) continue;
             if (evts.some(e => e?._carryoverSeed)) {
                 manualSummaryMsgIndices.add(i);
@@ -13785,22 +14520,17 @@ async function checkAutoSummary() {
             }
         }
 
-        const bufferMsgIndices = [];
+        // 首次摘要仅针对「尾部连续未压缩时间线段」：从末尾向前，遇到已摘要边界即停止
+        const tailEventCandidates = _collectTailContinuousAutoSummaryEvents(
+            chat,
+            cutoff,
+            summarizedIndices,
+            manualSummaryMsgIndices
+        );
+        const bufferMsgIndices = [...new Set(tailEventCandidates.map(e => e.msgIdx))].sort((a, b) => a - b);
         let bufferTokens = 0;
-        for (let i = 0; i < cutoff; i++) {
-            if (chat[i]?.is_hidden || summarizedIndices.has(i)) continue;
-            if (chat[i]?.horae_meta?._skipHorae) continue;
-            if (chat[i]?.horae_meta?.events?.some(e => e?._carryoverSeed)) continue;
-            if (manualSummaryMsgIndices.has(i)) continue;
-            if (!chat[i]?.is_user && isEmptyOrCodeLayer(chat[i]?.mes)) continue;
-            // 跳过事件全部已被压缩的消息
-            const _evts = chat[i]?.horae_meta?.events;
-            if (_evts?.length) {
-                const _hasUncompressed = _evts.some(e => e && !e.isSummary && !e._compressedBy);
-                if (!_hasUncompressed) continue;
-            }
-            bufferMsgIndices.push(i);
-            if (bufferMode === 'tokens') {
+        if (bufferMode === 'tokens') {
+            for (const i of bufferMsgIndices) {
                 bufferTokens += estimateTokens(chat[i]?.mes || '');
             }
         }
@@ -13809,47 +14539,24 @@ async function checkAutoSummary() {
         if (bufferMode === 'tokens') {
             shouldTrigger = bufferTokens > bufferLimit;
         } else {
-            shouldTrigger = bufferMsgIndices.length > bufferLimit;
+            shouldTrigger = tailEventCandidates.length > bufferLimit;
         }
+
+        const tailFloorList = [...new Set(tailEventCandidates.map(e => e.msgIdx))].sort((a, b) => a - b);
+        const tailFloorHint = tailFloorList.length ? tailFloorList.map(i => `#${i}`).join(', ') : 'none';
+        console.log(`[Horae] 自动摘要检查：尾部连续未压缩时间线${tailEventCandidates.length}条(${bufferMode === 'tokens' ? bufferTokens + 'tok' : tailEventCandidates.length + '条'})，楼层=[${tailFloorHint}]，阈值${bufferLimit}，${shouldTrigger ? '触发' : '未达阈值'}`);
         
-        console.log(`[Horae] 自动摘要检查：${bufferMsgIndices.length}条缓冲消息(${bufferMode === 'tokens' ? bufferTokens + 'tok' : bufferMsgIndices.length + '条'})，阈值${bufferLimit}，${shouldTrigger ? '触发' : '未达阈值'}`);
-        
-        if (!shouldTrigger || bufferMsgIndices.length === 0) return;
+        if (!shouldTrigger || tailEventCandidates.length === 0) return;
         
         // 单次摘要批量上限：防止旧档案首次启用时 token 爆炸
-        const MAX_BATCH_MSGS = settings.autoSummaryBatchMaxMsgs || 50;
+        const MAX_BATCH_EVENTS = settings.autoSummaryBatchMaxMsgs || 50;
         const MAX_BATCH_TOKENS = settings.autoSummaryBatchMaxTokens || 80000;
-        let batchIndices = [];
-        let batchTokenCount = 0;
-        for (const i of bufferMsgIndices) {
-            const tok = estimateTokens(chat[i]?.mes || '');
-            if (batchIndices.length > 0 && (batchIndices.length >= MAX_BATCH_MSGS || batchTokenCount + tok > MAX_BATCH_TOKENS)) break;
-            batchIndices.push(i);
-            batchTokenCount += tok;
-        }
-        const remaining = bufferMsgIndices.length - batchIndices.length;
-        
-        const bufferEvents = [];
-        for (const i of batchIndices) {
-            const meta = chat[i]?.horae_meta;
-            if (!meta) continue;
-            if (meta.event && !meta.events) {
-                meta.events = [meta.event];
-                delete meta.event;
-            }
-            if (!meta.events) continue;
-            for (let j = 0; j < meta.events.length; j++) {
-                const evt = meta.events[j];
-                if (!evt?.summary || evt._compressedBy || evt.isSummary || evt._carryoverSeed) continue;
-                bufferEvents.push({
-                    msgIdx: i, evtIdx: j,
-                    date: meta.timestamp?.story_date || '?',
-                    time: meta.timestamp?.story_time || '',
-                    level: evt.level || '一般',
-                    summary: evt.summary
-                });
-            }
-        }
+        const {
+            events: bufferEvents,
+            msgIndices: batchIndices,
+            remainingEvents: remaining
+        } = _pickAutoSummaryBatchEvents(chat, tailEventCandidates, MAX_BATCH_EVENTS, MAX_BATCH_TOKENS);
+        if (!bufferEvents.length || !batchIndices.length) return;
         
         // 检测缓冲区消息的时间线/时间戳缺失情况
         const _missingTimestamp = [];
@@ -13858,7 +14565,7 @@ async function checkAutoSummary() {
             if (chat[i]?.is_user) continue;
             const meta = chat[i]?.horae_meta;
             if (!meta?.timestamp?.story_date) _missingTimestamp.push(i);
-            const hasEvt = meta?.events?.some(e => e?.summary && !e._compressedBy && !e.isSummary);
+            const hasEvt = bufferEvents.some(e => e.msgIdx === i);
             if (!hasEvt && !meta?.event?.summary) _missingEvents.push(i);
         }
         if (bufferEvents.length === 0 && _missingTimestamp.length === batchIndices.length) {
@@ -13886,7 +14593,7 @@ async function checkAutoSummary() {
         }
         
         const remainingHint = remaining > 0 ? ` (${remaining} remaining)` : '';
-        const batchMsg = t('toast.autoSummaryProgress', {batch: batchIndices.length, total: bufferMsgIndices.length, remaining: remainingHint});
+        const batchMsg = t('toast.autoSummaryProgress', {batch: bufferEvents.length, total: tailEventCandidates.length, remaining: remainingHint});
         showToast(batchMsg, 'info');
         
         const context = getContext();
@@ -13948,6 +14655,7 @@ async function checkAutoSummary() {
             coveredIndices: [...msgIndices],
             summaryText,
             originalEvents,
+            depth: 1,
             active: true,
             createdAt: new Date().toISOString(),
             auto: true
@@ -14183,6 +14891,30 @@ function getDefaultAutoSummaryPrompt() {
 - 纯文本输出！绝对禁止添加任何Markdown标记（无小标题、无列表、无加粗）、多余格式，严禁出现 <horae> 等任何XML标签。
 - {{user}} 是主角名。
 - 语言风格：冷峻客观、时间线清晰、信息高度浓缩的叙事体。`;
+}
+
+/** 默认的二次总结提示词（仅基于时间线/已有摘要） */
+function getDefaultAutoResummaryPrompt() {
+    return `=====【事件压缩】=====
+你是剧情压缩助手。请将以下{{count}}条剧情事件，压缩为一段信息密度极高的连贯摘要。
+
+{{events}}
+
+【压缩原则】
+不设硬性字数限制，摘要的长短完全由原事件中“需保留的高优信息量”自然决定。请严格依靠下方的权重系统进行信息提取。
+
+【细节保留权重（严禁遗漏）】
+1. 绝对高优（时间锚定）：必须精确保留每个事件发生的具体日期/时间，将其作为叙事的引导线索（例如：“在[X月X日]，U与...”）。严禁使用“后来/随后/第二天”等模糊副词抹除真实时间坐标。
+2. 最高优（必留）：明确的承诺/待办、重要物品的交接与位置、NPC生死的改变。
+3. 高优（必留）：「关键」和「重要」级别的事件中的核心动作、情绪的实质性反转（如：由爱生恨、建立信任）。
+4. 中优（合并）：「一般」级别的事件，提取其背景作用（如“在赶路途中”），剔除无意义的寒暄。
+
+【输出要求】
+- 必须严格按照事件发生的日期先后顺序，串联因果关系，形成一篇连贯的微型故事。
+- 严禁将具体动作抽象化（❌“两人进行了交易” ✅“U用50金币换取了艾伦的地图”）。
+- 具体的日期、人名、地名、特定物品名必须精确保留原文。
+- 输出纯文本摘要！绝对不要添加任何Markdown标记（无加粗、无列表）、换行符或多余格式，必须写成一个包含高密度信息的厚实段落。
+- {{user}} 是主角名，语言风格必须是客观、精准的叙事体。`;
 }
 
 function _getDefaultAutoSummaryPromptEn() {
@@ -15800,15 +16532,19 @@ async function clearAllData() {
 /**
  * AI任务生成入口（可按设置切换 generateRaw / generate）
  * @param {string} prompt
- * @param {{ noVectorRecallMarker?: boolean }} opts
+ * @param {{ noVectorRecallMarker?: boolean, noContextInjectionMarker?: boolean }} opts
  */
 async function _generateForAiTasks(prompt, opts = {}) {
-    const { noVectorRecallMarker = false } = opts;
+    const { noVectorRecallMarker = false, noContextInjectionMarker = false } = opts;
     const context = getContext();
+    const markerLines = [];
+    if (noVectorRecallMarker) markerLines.push(_createNoVectorRecallMarker());
+    if (noContextInjectionMarker) markerLines.push(_createNoContextInjectionMarker());
+    const markerText = markerLines.join('\n');
 
     if (settings.useMainPresetForAiTasks && typeof context?.generate === 'function') {
-        const finalPrompt = noVectorRecallMarker
-            ? `${_createNoVectorRecallMarker()}\n${prompt}`
+        const finalPrompt = markerText
+            ? `${markerText}\n${prompt}`
             : prompt;
         return await context.generate('quiet', {
             quiet_prompt: finalPrompt,
@@ -15817,11 +16553,10 @@ async function _generateForAiTasks(prompt, opts = {}) {
         });
     }
 
-    if (noVectorRecallMarker) {
-        const marker = _createNoVectorRecallMarker();
+    if (markerText) {
         return await context.generateRaw({
             prompt: [
-                { role: 'system', content: marker },
+                { role: 'system', content: markerText },
                 { role: 'user', content: prompt },
             ],
         });
@@ -16279,9 +17014,15 @@ function _splitTimelineSection(promptText) {
 
 const HORAE_INTERNAL_NO_VECTOR_RECALL_PREFIX = '[HORAE_INTERNAL:NO_VECTOR_RECALL:';
 const HORAE_INTERNAL_NO_VECTOR_RECALL_RE = /\[HORAE_INTERNAL:NO_VECTOR_RECALL:[^\]]+\]/g;
+const HORAE_INTERNAL_NO_CONTEXT_INJECTION_PREFIX = '[HORAE_INTERNAL:NO_CONTEXT_INJECTION:';
+const HORAE_INTERNAL_NO_CONTEXT_INJECTION_RE = /\[HORAE_INTERNAL:NO_CONTEXT_INJECTION:[^\]]+\]/g;
 
 function _createNoVectorRecallMarker() {
     return `${HORAE_INTERNAL_NO_VECTOR_RECALL_PREFIX}${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}]`;
+}
+
+function _createNoContextInjectionMarker() {
+    return `${HORAE_INTERNAL_NO_CONTEXT_INJECTION_PREFIX}${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}]`;
 }
 
 function _stripNoVectorRecallMarkers(chatMessages) {
@@ -16302,9 +17043,32 @@ function _stripNoVectorRecallMarkers(chatMessages) {
     return found;
 }
 
+function _stripNoContextInjectionMarkers(chatMessages) {
+    if (!Array.isArray(chatMessages) || chatMessages.length === 0) return false;
+    let found = false;
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+        const msg = chatMessages[i];
+        if (!msg || typeof msg.content !== 'string') continue;
+        if (!msg.content.includes(HORAE_INTERNAL_NO_CONTEXT_INJECTION_PREFIX)) continue;
+        found = true;
+        const cleaned = msg.content.replace(HORAE_INTERNAL_NO_CONTEXT_INJECTION_RE, '').trim();
+        if (cleaned) {
+            msg.content = cleaned;
+        } else {
+            chatMessages.splice(i, 1);
+        }
+    }
+    return found;
+}
+
 async function onPromptReady(eventData) {
     const skipVectorRecallOnce = _stripNoVectorRecallMarkers(eventData?.chat);
+    const skipContextInjectionOnce = _stripNoContextInjectionMarkers(eventData?.chat);
     if (_isSummaryGeneration) return;
+    if (skipContextInjectionOnce) {
+        console.log('[Horae] Internal no-context marker detected, skip Horae context injection for this request');
+        return;
+    }
     if (!settings.enabled || !settings.injectContext) return;
     if (eventData.dryRun) return;
     
