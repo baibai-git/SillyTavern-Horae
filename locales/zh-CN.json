@@ -169,7 +169,7 @@
         "bufferLimit": "缓冲上限",
         "bufferLimitHint": "未压缩消息超过此阈值时触发自动总结",
         "resummaryThreshold": "总结数量达到多少时进行二次总结",
-        "resummaryThresholdHint": "二次总结达到该数量后会继续三次总结，以此类推，为0则关闭二次总结",
+        "resummaryThresholdHint": "二次总结达到该数量后会继续三次总结，以此类推，为0则关闭二次总结，推荐值为6-8",
         "autoSummaryExample": "示例：保留10条+缓冲5条=总共15条以上才总结",
         "batchMaxMessages": "每批最大消息数",
         "batchMaxMessagesHint": "AI智能补全时每批处理的最大消息数",

@@ -157,7 +157,7 @@ const DEFAULT_SETTINGS = {
     autoSummaryKeepRecent: 5,      // 保留最近N条消息不压缩
     autoSummaryBufferMode: 'messages', // 'messages' | 'tokens'
     autoSummaryBufferLimit: 20,     // 缓冲阈值（楼层数或Token数）
-    autoSummaryResummaryThreshold: 10, // <=0 关闭二次总结；>0 时同层摘要达到此值触发更高层摘要（2->3->4...）
+    autoSummaryResummaryThreshold: 7, // <=0 关闭二次总结；>0 时同层摘要达到此值触发更高层摘要（2->3->4...）
     autoSummaryBatchMaxMsgs: 50,    // 单次摘要最大消息条数
     autoSummaryBatchMaxTokens: 80000, // 单次摘要最大Token数
     autoSummaryUseCustomApi: false, // 是否使用独立API端点
