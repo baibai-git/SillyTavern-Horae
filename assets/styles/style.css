@@ -1197,6 +1197,22 @@
     margin-left: auto;
 }
 
+.horae-setting-inline-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    margin-left: 24px;
+}
+
+.horae-setting-inline-controls select {
+    min-width: 120px;
+}
+
+.horae-setting-inline-controls input[type="number"] {
+    margin-left: 0;
+}
+
 .horae-setting-hint {
     display: block;
     font-size: 11px;

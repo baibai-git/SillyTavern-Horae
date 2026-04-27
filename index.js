@@ -118,6 +118,7 @@ const DEFAULT_SETTINGS = {
     injectContext: true,
     useMainPresetForAiTasks: false, // AI分析/批量扫描/手动压缩是否使用酒馆主预设（generate）
     showMessagePanel: true,
+    injectionDepthSource: 'system', // 注入深度来源: system(原逻辑) / preset(按完整提示词末尾偏移)
     injectionPosition: 0,
     lastStoryDate: '',
     lastStoryTime: '',
@@ -10995,6 +10996,12 @@ function initSettingsEvents() {
         settings.injectionPosition = Number.isNaN(val) ? 1 : Math.max(0, val);
         saveSettings();
     });
+
+    $('#horae-setting-injection-depth-source').on('change', function() {
+        const v = String(this.value || 'system');
+        settings.injectionDepthSource = (v === 'preset') ? 'preset' : 'system';
+        saveSettings();
+    });
     
     $('#horae-btn-scan-all, #horae-btn-scan-history').on('click', scanHistoryWithProgress);
     $('#horae-btn-ai-scan').on('click', batchAIScan);
@@ -11576,7 +11583,7 @@ function initSettingsEvents() {
     // ── Horae 全局配置 导出/导入/重置 ──
     const _SETTINGS_EXPORT_KEYS = [
         'enabled','autoParse','injectContext','useMainPresetForAiTasks','showMessagePanel','showTopIcon',
-        'injectionPosition',
+        'injectionDepthSource','injectionPosition',
         'sendTimeline','sendCharacters','sendItems',
         'sendLocationMemory','sendRelationships','sendMood',
         'antiParaphraseMode','sideplayMode',
@@ -12433,6 +12440,7 @@ function syncSettingsToUI() {
     $('#horae-setting-show-panel').prop('checked', settings.showMessagePanel);
     $('#horae-setting-show-top-icon').prop('checked', settings.showTopIcon !== false);
     $('#horae-ext-show-top-icon').prop('checked', settings.showTopIcon !== false);
+    $('#horae-setting-injection-depth-source').val(settings.injectionDepthSource === 'preset' ? 'preset' : 'system');
     $('#horae-setting-injection-position').val(settings.injectionPosition);
     $('#horae-setting-send-timeline').prop('checked', settings.sendTimeline);
     $('#horae-setting-send-characters').prop('checked', settings.sendCharacters);
@@ -17154,26 +17162,48 @@ async function onPromptReady(eventData) {
         const combinedPrompt = recallPrompt
             ? `${dataPrompt}\n${recallPrompt}${antiParaRef}\n${rulesPrompt}`
             : `${dataPrompt}${antiParaRef}\n${rulesPrompt}`;
-
-        if (timelinePrompt) {
-            const markerIdx = _resolveTimelineInsertIndexByStartMarker(eventData.chat);
-            if (markerIdx !== -1) {
-                eventData.chat.splice(markerIdx, 0, { role: 'system', content: timelinePrompt });
-                console.log(`[Horae] Story timeline injected after [Start a new Chat]${skipLast ? ' (skip last message)' : ''}`);
-            } else {
-                const timelineDepth = 99999;
-                const timelineIdx = _resolveInsertIndexByChatAnchor(chat, eventData.chat, timelineDepth);
-                eventData.chat.splice(timelineIdx, 0, { role: 'system', content: timelinePrompt });
-                console.log(`[Horae] Start marker not found, fallback timeline injection at depth -${timelineDepth}${skipLast ? ' (skip last message)' : ''}`);
-            }
-        }
-
         const positionRaw = parseInt(settings.injectionPosition, 10);
         const position = Number.isNaN(positionRaw) ? 1 : Math.max(0, positionRaw);
-        const insertIdx = _resolveInsertIndexByChatAnchor(chat, eventData.chat, position);
-        eventData.chat.splice(insertIdx, 0, { role: 'system', content: combinedPrompt });
-        
-        console.log(`[Horae] 已注入上下文，位置: -${position}${skipLast ? '（已跳过末尾消息）' : ''}${recallPrompt ? '（含向量召回）' : ''}`);
+        const depthSource = settings.injectionDepthSource === 'preset' ? 'preset' : 'system';
+
+        if (depthSource === 'preset') {
+            // 预设 @D：不按聊天楼层定位，直接按完整提示词末尾偏移插入
+            if (timelinePrompt) {
+                // 剧情轨迹保持与系统 @D 相同的定位逻辑
+                const markerIdx = _resolveTimelineInsertIndexByStartMarker(eventData.chat);
+                if (markerIdx !== -1) {
+                    eventData.chat.splice(markerIdx, 0, { role: 'system', content: timelinePrompt });
+                    console.log(`[Horae] Story timeline injected after [Start a new Chat] (preset@D)${skipLast ? ' (skip last message)' : ''}`);
+                } else {
+                    const timelineDepth = 99999;
+                    const timelineIdx = _resolveInsertIndexByChatAnchor(chat, eventData.chat, timelineDepth);
+                    eventData.chat.splice(timelineIdx, 0, { role: 'system', content: timelinePrompt });
+                    console.log(`[Horae] Start marker not found, fallback timeline injection at depth -${timelineDepth} (preset@D)${skipLast ? ' (skip last message)' : ''}`);
+                }
+            }
+            const len = Array.isArray(eventData.chat) ? eventData.chat.length : 0;
+            const insertIdx = Math.max(0, len - position);
+            eventData.chat.splice(insertIdx, 0, { role: 'system', content: combinedPrompt });
+            console.log(`[Horae] 已注入上下文（预设@D），位置: -${position}${skipLast ? '（已跳过末尾消息）' : ''}${recallPrompt ? '（含向量召回）' : ''}`);
+        } else {
+            // 系统 @D：保留原有按聊天楼层定位的注入逻辑
+            if (timelinePrompt) {
+                const markerIdx = _resolveTimelineInsertIndexByStartMarker(eventData.chat);
+                if (markerIdx !== -1) {
+                    eventData.chat.splice(markerIdx, 0, { role: 'system', content: timelinePrompt });
+                    console.log(`[Horae] Story timeline injected after [Start a new Chat]${skipLast ? ' (skip last message)' : ''}`);
+                } else {
+                    const timelineDepth = 99999;
+                    const timelineIdx = _resolveInsertIndexByChatAnchor(chat, eventData.chat, timelineDepth);
+                    eventData.chat.splice(timelineIdx, 0, { role: 'system', content: timelinePrompt });
+                    console.log(`[Horae] Start marker not found, fallback timeline injection at depth -${timelineDepth}${skipLast ? ' (skip last message)' : ''}`);
+                }
+            }
+
+            const insertIdx = _resolveInsertIndexByChatAnchor(chat, eventData.chat, position);
+            eventData.chat.splice(insertIdx, 0, { role: 'system', content: combinedPrompt });
+            console.log(`[Horae] 已注入上下文，位置: -${position}${skipLast ? '（已跳过末尾消息）' : ''}${recallPrompt ? '（含向量召回）' : ''}`);
+        }
     } catch (error) {
         console.error('[Horae] 注入上下文失败:', error);
     }

@@ -615,16 +615,21 @@
                     </div>
                     
                     <div class="horae-setting-item">
-                        <label data-i18n="settings.injectionPosition">
-                            注入位置
-                            <input type="number" id="horae-setting-injection-position" min="0" max="10" value="1">
+                        <label data-i18n="settings.injectionDepth">
+                            注入深度
                         </label>
-                        <span class="horae-setting-hint" data-i18n="settings.injectionPositionHint">
+                        <div class="horae-setting-inline-controls">
+                            <select id="horae-setting-injection-depth-source">
+                                <option value="system" data-i18n="settings.injectionDepthSystem">系统 @D</option>
+                                <option value="preset" data-i18n="settings.injectionDepthPreset">预设 @D</option>
+                            </select>
+                            <input type="number" id="horae-setting-injection-position" min="0" max="10" value="1">
+                        </div>
+                        <span class="horae-setting-hint" data-i18n="settings.injectionDepthHint">
                             <i class="fa-solid fa-circle-info"></i>
-                            Horae状态信息插入到AI提示词的哪个位置：<br>
-                            0 = 最末尾（紧贴最新消息）<br>
-                            1 = 倒数第二（推荐，给AI留思考空间）<br>
-                            数字越大越靠前
+                            选择 @D 来源并设置注入深度数值。<br>
+                            系统 @D = 与世界书同理<br>
+                            预设 @D = 在整个预设中从末端开始定位，例如0是注入到预设最末尾，1就是成为倒数第二条消息
                         </span>
                     </div>
                 </div>
