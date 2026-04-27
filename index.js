@@ -17012,6 +17012,22 @@ function _splitTimelineSection(promptText) {
     return { mainPrompt, timelinePrompt };
 }
 
+/**
+ * 优先将剧情轨迹注入到 "[Start a new Chat]" system 消息之后。
+ * 找不到该锚点时返回 -1，调用方再回退到旧定位策略。
+ */
+function _resolveTimelineInsertIndexByStartMarker(promptChat) {
+    if (!Array.isArray(promptChat) || promptChat.length === 0) return -1;
+    for (let i = 0; i < promptChat.length; i++) {
+        const row = promptChat[i];
+        if (!row || row.role !== 'system' || typeof row.content !== 'string') continue;
+        if (row.content.includes('[Start a new Chat]')) {
+            return i + 1;
+        }
+    }
+    return -1;
+}
+
 const HORAE_INTERNAL_NO_VECTOR_RECALL_PREFIX = '[HORAE_INTERNAL:NO_VECTOR_RECALL:';
 const HORAE_INTERNAL_NO_VECTOR_RECALL_RE = /\[HORAE_INTERNAL:NO_VECTOR_RECALL:[^\]]+\]/g;
 const HORAE_INTERNAL_NO_CONTEXT_INJECTION_PREFIX = '[HORAE_INTERNAL:NO_CONTEXT_INJECTION:';
@@ -17140,10 +17156,16 @@ async function onPromptReady(eventData) {
             : `${dataPrompt}${antiParaRef}\n${rulesPrompt}`;
 
         if (timelinePrompt) {
-            const timelineDepth = 99999;
-            const timelineIdx = _resolveInsertIndexByChatAnchor(chat, eventData.chat, timelineDepth);
-            eventData.chat.splice(timelineIdx, 0, { role: 'system', content: timelinePrompt });
-            console.log(`[Horae] Story timeline injected at depth -${timelineDepth}${skipLast ? ' (skip last message)' : ''}`);
+            const markerIdx = _resolveTimelineInsertIndexByStartMarker(eventData.chat);
+            if (markerIdx !== -1) {
+                eventData.chat.splice(markerIdx, 0, { role: 'system', content: timelinePrompt });
+                console.log(`[Horae] Story timeline injected after [Start a new Chat]${skipLast ? ' (skip last message)' : ''}`);
+            } else {
+                const timelineDepth = 99999;
+                const timelineIdx = _resolveInsertIndexByChatAnchor(chat, eventData.chat, timelineDepth);
+                eventData.chat.splice(timelineIdx, 0, { role: 'system', content: timelinePrompt });
+                console.log(`[Horae] Start marker not found, fallback timeline injection at depth -${timelineDepth}${skipLast ? ' (skip last message)' : ''}`);
+            }
         }
 
         const positionRaw = parseInt(settings.injectionPosition, 10);
