@@ -730,7 +730,7 @@
         "rerankRecallThreshold": "Rerank 검색 임계값",
         "rerankRecallThresholdHint": "Rerank 활성화 시 사용하는 embedding 검색 임계값. 위의 \"최소 유사도 임계값\"보다 훨씬 낮습니다. embedding 점수는 낮지만 실제로 관련 있는 메시지도 Rerank에 도달할 수 있도록 합니다.",
         "rerankMinScore": "Rerank 최저 점수",
-        "rerankMinScoreHint": "Rerank의 관련성 점수가 이 값보다 낮은 결과는 폐기되어 컨텍스트에 들어가지 않습니다. 권장 0.4~0.6.",
+        "rerankMinScoreHint": "Rerank의 관련성 점수가 이 값보다 낮은 결과는 폐기되어 컨텍스트에 들어가지 않습니다. 권장 0.9+.",
         "fallbackEnabled": "검색 결과가 비어있으면 이전 메시지로 재시도",
         "fallbackHint": "사용자 입력에 의미가 없을 때(예: \"스토리 진행\") 벡터 검색이 비거나 저점수만 나오면, 이전 AI 응답 내용으로 자동 재검색하여 현재 장면과 관련된 기억을 가져옵니다. Rerank 활성화 시 Rerank 결과 기준, 비활성화 시 아래 임계값 기준.",
         "fallbackMinScore": "Fallback 트리거 임계값",
