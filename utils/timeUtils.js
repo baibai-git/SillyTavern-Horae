@@ -21,6 +21,22 @@ const CHINESE_NUMS = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
 
+function normalizeNumericDateSeparators(dateStr) {
+    if (!dateStr) return dateStr;
+
+    return dateStr
+        .replace(/^(\d{4,})[.\uFF0E\u3002\uFE52](\d{1,2})[.\uFF0E\u3002\uFE52](\d{1,2})(?=$|\s)/, '$1/$2/$3')
+        .replace(/^(\d{1,2})[.\uFF0E\u3002\uFE52](\d{1,2})(?=$|\s)/, '$1/$2');
+}
+
+function looksLikeStructuredNumericDate(dateStr) {
+    if (!dateStr) return false;
+
+    return /^(?:\d{4,}[\/.\-\uFF0E\u3002\uFE52]\d{1,2}[\/.\-\uFF0E\u3002\uFE52]\d{1,2}|\d{1,2}[\/.\-\uFF0E\u3002\uFE52]\d{1,2})(?=$|\s)/.test(dateStr) ||
+        /^\d+\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?(?=$|\s)/.test(dateStr) ||
+        /^\d{1,2}\s*月\s*\d{1,2}\s*日?(?=$|\s)/.test(dateStr);
+}
+
 /** 从日期字符串中提取日数 */
 function extractDayNumber(dateStr) {
     if (!dateStr) return null;
@@ -76,6 +92,7 @@ export function parseStoryDate(dateStr) {
     
     const aiWeekdayMatch = cleanStr.match(/\(([日一二三四五六])\)/);
     cleanStr = cleanStr.replace(/\s*\([日一二三四五六]\)\s*/g, ' ').trim();
+    cleanStr = normalizeNumericDateSeparators(cleanStr);
     
     // 无效日期按奇幻日历处理
     if (/[xX]{2}|[?？]{2}/.test(cleanStr)) {
@@ -135,6 +152,10 @@ export function parseStoryDate(dateStr) {
     // 奇幻日历格式
     const monthId = extractMonthIdentifier(cleanStr);
     const dayNum = extractDayNumber(cleanStr);
+
+    if (looksLikeStructuredNumericDate(cleanStr)) {
+        return null;
+    }
     
     if (monthId || dayNum !== null) {
         return { 
@@ -154,10 +175,10 @@ export function calculateRelativeTime(fromDate, toDate) {
     if (!fromDate || !toDate) return null;
     
     // 去掉尾部时间部分（如 "15:00" / "下午" / "酉时"），保留完整日期进行比较
-    const stripTime = (s) => s.trim()
+    const stripTime = (s) => normalizeNumericDateSeparators(s.trim()
         .replace(/\s+\d{1,2}[:：]\d{2}.*$/, '')
         .replace(/\s+(凌晨|早上|上午|中午|下午|傍晚|晚上|深夜|子时|丑时|寅时|卯时|辰时|巳时|午时|未时|申时|酉时|戌时|亥时).*$/i, '')
-        .trim();
+        .trim());
     const fromDateOnly = stripTime(fromDate);
     const toDateOnly = stripTime(toDate);
     
