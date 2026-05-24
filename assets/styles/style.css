@@ -2785,38 +2785,6 @@
     margin-right: 4px;
 }
 
-.horae-timeline-injection-hint {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-}
-
-.horae-timeline-injection-hint>i {
-    flex: 0 0 auto;
-    margin-top: 2px;
-    margin-right: 0;
-}
-
-.horae-timeline-injection-hint-body {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-}
-
-.horae-timeline-injection-hint-row {
-    display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    column-gap: 8px;
-    align-items: baseline;
-}
-
-.horae-timeline-injection-hint-row strong {
-    color: var(--horae-text);
-    font-weight: 600;
-    white-space: nowrap;
-}
-
 /* 空列表提示 */
 .horae-cleanup-empty {
     text-align: center;

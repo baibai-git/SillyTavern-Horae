@@ -171,7 +171,6 @@ const DEFAULT_SETTINGS = {
     gzipSaveRequests: true, // 对消息保存接口请求体进行 Gzip 压缩
     injectionDepthSource: 'system', // 注入深度来源: system(原逻辑) / preset(按完整提示词末尾偏移)
     injectionPosition: 0,
-    timelineInjectionMode: 'separate', // inline(原逻辑合并注入) / separate(剧情轨迹独立前置)
     lastStoryDate: '',
     lastStoryTime: '',
     favoriteNpcs: [],  // 用户标记的星标NPC列表
@@ -12354,12 +12353,6 @@ function initSettingsEvents() {
         saveSettings();
     });
 
-    $('#horae-setting-timeline-injection-mode').on('change', function () {
-        const v = String(this.value || 'inline');
-        settings.timelineInjectionMode = (v === 'separate') ? 'separate' : 'inline';
-        saveSettings();
-    });
-
     $('#horae-btn-scan-all, #horae-btn-scan-history').on('click', scanHistoryWithProgress);
     $('#horae-btn-ai-scan').on('click', batchAIScan);
     $('#horae-btn-undo-ai-scan').on('click', undoAIScan);
@@ -12995,7 +12988,7 @@ function initSettingsEvents() {
         'enabled', 'autoParse', 'gzipSaveRequests', 'autoFillPrevTimelineOnSend', 'injectContext', 'injectCustomPrompts', 'showMessagePanel', 'showTopIcon',
         'useNewMessagePanel',
         'messagePanelTheme', 'messagePanelCustomThemes',
-        'injectionDepthSource', 'injectionPosition', 'timelineInjectionMode',
+        'injectionDepthSource', 'injectionPosition',
         'sendTimeline', 'contextDepth', 'sendCharacters', 'sendCharacterAffection', 'sendMainCharacterPersonality', 'sendItems',
         'sendLocationMemory', 'sendRelationships', 'sendMood',
         'antiParaphraseMode', 'sideplayMode',
@@ -14287,7 +14280,6 @@ function syncSettingsToUI() {
     $('#horae-ext-show-top-icon').prop('checked', settings.showTopIcon !== false);
     $('#horae-setting-injection-depth-source').val(settings.injectionDepthSource === 'preset' ? 'preset' : 'system');
     $('#horae-setting-injection-position').val(settings.injectionPosition);
-    $('#horae-setting-timeline-injection-mode').val(settings.timelineInjectionMode === 'separate' ? 'separate' : 'inline');
     $('#horae-setting-send-timeline').prop('checked', settings.sendTimeline);
     $('#horae-setting-context-depth').val(Number.isFinite(parseInt(settings.contextDepth, 10)) ? Math.max(0, parseInt(settings.contextDepth, 10)) : 15);
     $('#horae-setting-send-characters').prop('checked', settings.sendCharacters);
@@ -16121,12 +16113,22 @@ async function generateWithDirectApi(prompt, options = {}) {
     // orderedPrompts.push('user_input');
     if (!skipSnapshotTimelineInjection) {
         console.log(`分析的楼层号:${messageIndex}`);
-        const promptSplit = _buildPromptSplitBeforeMessage(messageIndex);
-        const snapshotPrompt = _getSnapshotPromptBeforeMessage(messageIndex, promptSplit);
-        const timelinePrompt = _getTimelinePromptBeforeMessage(messageIndex, promptSplit);
+        const shouldInjectLocalSnapshot = !options?.skipLocalSnapshotInjection;
+        const shouldInjectLocalTimeline = !options?.skipLocalTimelineInjection;
+        if (shouldInjectLocalSnapshot || shouldInjectLocalTimeline) {
+            const promptSplit = _buildPromptSplitBeforeMessage(messageIndex);
+            const snapshotPrompt = shouldInjectLocalSnapshot
+                ? _getSnapshotPromptBeforeMessage(messageIndex, promptSplit)
+                : '';
+            const timelinePrompt = shouldInjectLocalTimeline
+                ? _getTimelinePromptBeforeMessage(messageIndex, promptSplit)
+                : '';
 
-        if (timelinePrompt?.trim()) orderedPrompts.push({ role: 'system', content: timelinePrompt.trim() });
-        if (snapshotPrompt?.trim()) orderedPrompts.push({ role: 'system', content: snapshotPrompt.trim() });
+            if (timelinePrompt?.trim()) orderedPrompts.push({ role: 'system', content: timelinePrompt.trim() });
+            if (snapshotPrompt?.trim()) orderedPrompts.push({ role: 'system', content: snapshotPrompt.trim() });
+        } else {
+            console.log('[Horae] Local snapshot/timeline ordered_prompts injection skipped by markers (direct API)');
+        }
     } else {
         console.log('[Horae] autoSummary task: skip snapshot/timeline ordered_prompts injection (direct API)');
     }
@@ -17384,7 +17386,14 @@ event:重要程度|事件描述
 
         try {
             const response = await Promise.race([
-                _generateForAiTasks(batchPrompt),
+                _generateForAiTasks(batchPrompt, {
+                    noContextInjectionMarker: true,
+                    noTimelineInjectionMarker: true,
+                    noVectorRecallMarker: true,
+                    noSystemPromptInjectionMarker: true,
+                    skipLocalSnapshotInjection: true,
+                    skipLocalTimelineInjection: true,
+                }),
                 cancelPromise.then(() => null)
             ]);
             if (cancelled) break;
@@ -18646,7 +18655,7 @@ async function clearAllData() {
 /**
  * AI任务生成入口
  * @param {string} prompt
- * @param {{ messageIndex?: number, noVectorRecallMarker?: boolean, noContextInjectionMarker?: boolean, noTimelineInjectionMarker?: boolean, noSystemPromptInjectionMarker?: boolean, injectCustomPrompts?: boolean }} opts
+ * @param {{ messageIndex?: number, noVectorRecallMarker?: boolean, noContextInjectionMarker?: boolean, noTimelineInjectionMarker?: boolean, noSystemPromptInjectionMarker?: boolean, injectCustomPrompts?: boolean, skipLocalSnapshotInjection?: boolean, skipLocalTimelineInjection?: boolean }} opts
  */
 async function _generateForAiTasks(prompt, opts = {}) {
     const {
@@ -18656,6 +18665,8 @@ async function _generateForAiTasks(prompt, opts = {}) {
         noContextInjectionMarker = false,
         noTimelineInjectionMarker = false,
         noSystemPromptInjectionMarker = false,
+        skipLocalSnapshotInjection = false,
+        skipLocalTimelineInjection = false,
     } = opts;
     const shouldStream = _shouldStreamSummaryTasks();
     const skipSnapshotTimelineInjection = taskType === 'autoSummary';
@@ -18674,12 +18685,22 @@ async function _generateForAiTasks(prompt, opts = {}) {
 
     if (!skipSnapshotTimelineInjection) {
         console.log(`分析的楼层:${messageIndex}`);
-        const promptSplit = _buildPromptSplitBeforeMessage(messageIndex);
-        const snapshotPrompt = _getSnapshotPromptBeforeMessage(messageIndex, promptSplit);
-        const timelinePrompt = _getTimelinePromptBeforeMessage(messageIndex, promptSplit);
+        const shouldInjectLocalSnapshot = !skipLocalSnapshotInjection;
+        const shouldInjectLocalTimeline = !skipLocalTimelineInjection;
+        if (shouldInjectLocalSnapshot || shouldInjectLocalTimeline) {
+            const promptSplit = _buildPromptSplitBeforeMessage(messageIndex);
+            const snapshotPrompt = shouldInjectLocalSnapshot
+                ? _getSnapshotPromptBeforeMessage(messageIndex, promptSplit)
+                : '';
+            const timelinePrompt = shouldInjectLocalTimeline
+                ? _getTimelinePromptBeforeMessage(messageIndex, promptSplit)
+                : '';
 
-        if (timelinePrompt?.trim()) orderedPrompts.push({ role: 'system', content: timelinePrompt.trim() });
-        if (snapshotPrompt?.trim()) orderedPrompts.push({ role: 'system', content: snapshotPrompt.trim() });
+            if (timelinePrompt?.trim()) orderedPrompts.push({ role: 'system', content: timelinePrompt.trim() });
+            if (snapshotPrompt?.trim()) orderedPrompts.push({ role: 'system', content: snapshotPrompt.trim() });
+        } else {
+            console.log('[Horae] Local snapshot/timeline ordered_prompts injection skipped by markers');
+        }
     } else {
         console.log('[Horae] autoSummary task: skip snapshot/timeline ordered_prompts injection');
     }
@@ -20033,14 +20054,9 @@ async function onPromptReady(eventData) {
         } catch (e) {
             // console.warn('[Horae][MainPersonality] onPromptReady debug log failed:', e);
         }
-        const timelineMode = settings.timelineInjectionMode === 'separate' ? 'separate' : 'inline';
-        let dataPrompt = rawDataPrompt;
-        let timelinePrompt = '';
-        if (timelineMode === 'separate' && !skipTimelineInjectionOnce) {
-            const split = _splitTimelineSection(rawDataPrompt);
-            dataPrompt = split.mainPrompt;
-            timelinePrompt = split.timelinePrompt;
-        }
+        const splitPrompt = _splitTimelineSection(rawDataPrompt);
+        const dataPrompt = splitPrompt.mainPrompt;
+        const timelinePrompt = skipTimelineInjectionOnce ? '' : splitPrompt.timelinePrompt;
         if (skipTimelineInjectionOnce) {
             console.log('[Horae] Internal no-timeline marker detected, skip story timeline injection for this request');
         }
