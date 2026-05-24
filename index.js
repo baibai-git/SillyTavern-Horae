@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki，柏柏
- * 版本: 1.14.1B
+ * 版本: 1.14.2B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -17,7 +17,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.1B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.2B';
 
 // ============================================
 // 常量定义
@@ -25,7 +25,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.14.1B';
+const VERSION = '1.14.2B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -10513,7 +10513,7 @@ async function _rescanMessagePanelMetaForVue(messageId) {
         return null;
     }
 
-    const parsed = horaeManager.parseHoraeTag(message.mes);
+    const { parsed } = horaeManager.parseMessageContent(message.mes, { stripCustomTags: true });
     let newMeta;
     if (parsed) {
         newMeta = horaeManager.mergeParsedToMeta(createEmptyMeta(), parsed);
@@ -11527,7 +11527,7 @@ function rescanMessageMeta(messageId, panelEl) {
         return;
     }
 
-    const parsed = horaeManager.parseHoraeTag(messageContent);
+    const { parsed } = horaeManager.parseMessageContent(messageContent, { stripCustomTags: true });
 
     if (parsed) {
         // 用 mergeParsedToMeta 以空 meta 为基础，确保所有字段一致处理
@@ -14874,7 +14874,19 @@ async function scanHistoryWithProgress() {
 
         await getContext().saveChat();
 
-        showToast(t('toast.vectorScanDone', { processed: result.processed, skipped: result.skipped }), 'success');
+        if (result.clearedIndices?.length > 0) {
+            const floors = result.clearedIndices.map(i => `#${i}`).join(', ');
+            console.warn(`[Horae] 扫描重建时清空了 ${result.clearedIndices.length} 个楼层的 Horae 数据（标准标签与宽松解析均失败）: ${floors}`);
+        }
+
+        const scanToastType = result.cleared > 0 ? 'warning' : (result.looseMatched > 0 ? 'info' : 'success');
+        showToast(t('toast.vectorScanDone', {
+            processed: result.processed,
+            skipped: result.skipped,
+            strict: result.strictMatched,
+            loose: result.looseMatched,
+            cleared: result.cleared,
+        }), scanToastType);
         refreshAllDisplays();
         renderCustomTablesList();
     } catch (error) {

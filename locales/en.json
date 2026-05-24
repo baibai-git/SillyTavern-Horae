@@ -413,7 +413,7 @@
         "vectorBuildDone": "Index built: {{indexed}} added, {{skipped}} skipped",
         "vectorBuildFailed": "Index build failed: {{error}}",
         "vectorProcessing": "Processing... {{current}}/{{total}}",
-        "vectorScanDone": "Scan complete! {{processed}} processed, {{skipped}} skipped",
+        "vectorScanDone": "Scan complete! {{processed}} processed, {{skipped}} skipped (strict {{strict}} / loose {{loose}} / cleared {{cleared}})",
         "vectorDownloading": "Downloading model... {{pct}}%",
         "vectorTestSuccess": "Vector API connected! Dimensions: {{dim}}",
         "vectorTestFailed": "Vector API test failed: {{error}}",

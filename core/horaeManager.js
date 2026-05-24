@@ -3264,19 +3264,12 @@ class HoraeManager {
 
     /** 处理AI回复，解析标签并存储元数据 */
     processAIResponse(messageIndex, messageContent) {
-        // 根据用户配置的剔除标签，整块移除小剧场等自定义区块，防止其内部的 horae 标签污染正文解析
-        const cleanedContent = this._stripCustomTags(messageContent, this.settings?.vectorStripTags);
-        let parsed = this.parseHoraeTag(cleanedContent);
-
-        // 标签解析失败时，自动 fallback 到宽松格式解析
-        if (!parsed) {
-            parsed = this.parseLooseFormat(cleanedContent);
-            if (parsed) {
-                console.log(`[Horae] #${messageIndex} 未检测到标签，已通过宽松解析提取数据`);
-            }
-        }
+        const { parsed, mode } = this.parseMessageContent(messageContent, { stripCustomTags: true });
 
         if (parsed) {
+            if (mode === 'loose') {
+                console.log(`[Horae] #${messageIndex} 未检测到标签，已通过宽松解析提取数据`);
+            }
             const existingMeta = this.getMessageMeta(messageIndex);
             const newMeta = this.mergeParsedToMeta(existingMeta, parsed);
 
@@ -3314,14 +3307,11 @@ class HoraeManager {
             if (newMeta._rpgChanges) {
                 this._mergeRpgData(newMeta._rpgChanges);
             }
-            return true;
-        } else {
-            // 无标签，创建空元数据
-            if (!this.getMessageMeta(messageIndex)) {
-                this.setMessageMeta(messageIndex, createEmptyMeta());
-            }
-            return false;
         }
+        if (!this.getMessageMeta(messageIndex)) {
+            this.setMessageMeta(messageIndex, createEmptyMeta());
+        }
+        return false;
     }
 
     /**
@@ -3618,6 +3608,10 @@ class HoraeManager {
         const chat = this.getChat();
         let processed = 0;
         let skipped = 0;
+        let strictMatched = 0;
+        let looseMatched = 0;
+        let cleared = 0;
+        const clearedIndices = [];
 
         const PRESERVE_KEYS = [
             'autoSummaries', 'customTables', 'globalTableData', 'charTableData',
@@ -3687,7 +3681,7 @@ class HoraeManager {
                 }
             };
 
-            const parsed = this.parseHoraeTag(message.mes);
+            const { parsed, mode } = this.parseMessageContent(message.mes, { stripCustomTags: true });
 
             if (parsed) {
                 const meta = this.mergeParsedToMeta(null, parsed);
@@ -3700,6 +3694,8 @@ class HoraeManager {
                 if (parsed.deletedAgenda?.length > 0) {
                     this.removeCompletedAgenda(parsed.deletedAgenda);
                 }
+                if (mode === 'tag') strictMatched++;
+                if (mode === 'loose') looseMatched++;
                 processed++;
             } else if (analyzeCallback) {
                 try {
@@ -3724,6 +3720,8 @@ class HoraeManager {
                 const meta = createEmptyMeta();
                 _applyPreserved(meta);
                 this.setMessageMeta(i, meta);
+                cleared++;
+                clearedIndices.push(i);
                 processed++;
             }
 
@@ -3732,7 +3730,7 @@ class HoraeManager {
             }
         }
 
-        return { processed, skipped };
+        return { processed, skipped, strictMatched, looseMatched, cleared, clearedIndices };
     }
 
     generateSystemPromptAddition() {
@@ -4877,6 +4875,28 @@ RPG 모드가 켜져 있으면 최종 출력은 반드시 세 개의 태그로 �
         }
 
         return hasAnyData ? result : null;
+    }
+
+    /** 统一消息解析入口：优先标准标签，失败后回退宽松匹配 */
+    parseMessageContent(message, options = {}) {
+        const { stripCustomTags = false, allowLooseFallback = true } = options;
+        const source = stripCustomTags
+            ? this._stripCustomTags(message, this.settings?.vectorStripTags)
+            : String(message || '');
+
+        const tagParsed = this.parseHoraeTag(source);
+        if (tagParsed) {
+            return { parsed: tagParsed, mode: 'tag', source };
+        }
+
+        if (allowLooseFallback) {
+            const looseParsed = this.parseLooseFormat(source);
+            if (looseParsed) {
+                return { parsed: looseParsed, mode: 'loose', source };
+            }
+        }
+
+        return { parsed: null, mode: null, source };
     }
 }
 

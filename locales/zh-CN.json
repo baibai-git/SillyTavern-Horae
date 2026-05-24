@@ -413,7 +413,7 @@
         "vectorBuildDone": "索引构建完成: {{indexed}} 条新增，{{skipped}} 条跳过",
         "vectorBuildFailed": "构建索引失败: {{error}}",
         "vectorProcessing": "处理中... {{current}}/{{total}}",
-        "vectorScanDone": "扫描完成！处理 {{processed}} 条，跳过 {{skipped}} 条",
+        "vectorScanDone": "扫描完成！处理 {{processed}} 条，跳过 {{skipped}} 条（标准 {{strict}} / 宽松 {{loose}} / 清空 {{cleared}}）",
         "vectorDownloading": "下载模型... {{pct}}%",
         "vectorTestSuccess": "向量 API 连接成功！维度 {{dim}}",
         "vectorTestFailed": "向量 API 连接失败: {{error}}",
