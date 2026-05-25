@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki，柏柏
- * 版本: 1.14.2B
+ * 版本: 1.14.3B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -17,7 +17,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.2B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.3B';
 
 // ============================================
 // 常量定义
@@ -25,7 +25,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.14.2B';
+const VERSION = '1.14.3B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -170,7 +170,7 @@ const DEFAULT_SETTINGS = {
     useNewMessagePanel: true,      // 使用新的 Vue 楼层面板；关闭后回退旧版 index.js 面板
     gzipSaveRequests: true, // 对消息保存接口请求体进行 Gzip 压缩
     injectionDepthSource: 'system', // 注入深度来源: system(原逻辑) / preset(按完整提示词末尾偏移)
-    injectionPosition: 0,
+    injectionPosition: 1,
     lastStoryDate: '',
     lastStoryTime: '',
     favoriteNpcs: [],  // 用户标记的星标NPC列表
@@ -281,7 +281,7 @@ const DEFAULT_SETTINGS = {
     vectorRerankKey: '',               // Rerank API 密钥（留空则复用 embedding 密钥）
     vectorRerankCandidates: 25,        // Rerank 候选条数（embedding 召回上限）
     vectorRerankRecallThreshold: 0.3,  // Rerank 路径的 embedding 召回阈值
-    vectorRerankMinScore: 0.5,         // Rerank 最低分；低于此分丢弃
+    vectorRerankMinScore: 0.9,         // Rerank 最低分；低于此分丢弃
     vectorRecallPresets: [],           // 用户自定义召回参数预设
     vectorRecallPresetSelected: 'builtin:rerank',
     vectorTopK: 5,
@@ -11060,6 +11060,17 @@ function _hasTimelineSummary(meta) {
     return events.some(evt => evt?.summary && String(evt.summary).trim());
 }
 
+function _hasStoryTimestamp(meta) {
+    return !!(
+        String(meta?.timestamp?.story_date || '').trim()
+        || String(meta?.timestamp?.story_time || '').trim()
+    );
+}
+
+function _hasTimeAndTimeline(meta) {
+    return _hasStoryTimestamp(meta) && _hasTimelineSummary(meta);
+}
+
 function _preserveRebuildControlFlags(targetMeta, sourceMeta) {
     if (!targetMeta || !sourceMeta) return;
     if (sourceMeta._skipHorae) targetMeta._skipHorae = true;
@@ -16251,6 +16262,7 @@ event 唯一且只放在 <horaeevent> 内。
             },
             ordered_prompts: orderedPrompts,
             should_stream: shouldStream,
+            should_silence: true,
             // overrides: {
             //     chat_history: {
             //         with_depth_entries: true,
@@ -18812,7 +18824,8 @@ event 唯一且只放在 <horaeevent> 内。
     const resp = await TavernHelper.generateRaw({
         user_input: prompt,
         ordered_prompts: orderedPrompts,
-        should_stream: shouldStream
+        should_stream: shouldStream,
+        should_silence: true,
     })
 
     return resp;
@@ -19022,9 +19035,10 @@ async function _autoFillPreviousAiTimelineBeforeInjection(chat) {
         ? existingMeta.events
         : (existingMeta.event ? [existingMeta.event] : []);
     const hasTimeline = existingEvents.some(evt => evt?.summary && String(evt.summary).trim());
+    const hasTimeAndEvent = _hasStoryTimestamp(existingMeta) && hasTimeline;
     const rpgOutputActive = _isRpgOutputActive();
     const hasRpgChanges = _rpgPayloadHasContent(existingMeta?._rpgChanges);
-    if (hasTimeline && (!rpgOutputActive || hasRpgChanges)) return;
+    if (hasTimeAndEvent && (!rpgOutputActive || hasRpgChanges)) return;
 
     const sourceText = typeof targetMsg?.mes === 'string' ? targetMsg.mes.trim() : '';
     if (!sourceText) return;
@@ -19717,6 +19731,107 @@ function _getSnapshotPromptBeforeMessage(messageIndex, preparedSplit = null) {
     return split.snapshotPrompt || '';
 }
 
+const HORAE_RECENT_SPLIT_MARKER = '[horae注入锚点] D2';
+
+function _findLatestAssistantBeforeTrailingUser(chat) {
+    if (!Array.isArray(chat) || chat.length < 2) return -1;
+    const lastMsg = chat[chat.length - 1];
+    if (!lastMsg?.is_user) return -1;
+
+    for (let i = chat.length - 2; i >= 0; i--) {
+        const msg = chat[i];
+        if (!msg || msg.is_user) continue;
+        if (msg.horae_meta?._skipHorae) continue;
+        return i;
+    }
+    return -1;
+}
+
+function _buildMainSendPromptSplit(chat, options = {}) {
+    const safeChat = Array.isArray(chat) ? chat : [];
+    const effectiveHiddenSet = options?.effectiveHiddenSet instanceof Set ? options.effectiveHiddenSet : null;
+    const skipTimeline = options?.skipTimeline === true;
+    const useLatestStructuredSnapshot = options?.useLatestStructuredSnapshot === true;
+    const fallbackSkipLast = Number.isInteger(options?.fallbackSkipLast)
+        ? Math.max(0, options.fallbackSkipLast)
+        : _resolvePromptReadySkipLast(safeChat);
+
+    const anchorMessageIndex = _findLatestAssistantBeforeTrailingUser(safeChat);
+    const skipLast = useLatestStructuredSnapshot
+        ? fallbackSkipLast
+        : (anchorMessageIndex >= 0
+            ? _resolveSkipLastBeforeMessage(anchorMessageIndex)
+            : fallbackSkipLast);
+
+    const rawPrompt = horaeManager.generateCompactPrompt(skipLast, {
+        includeTimeline: !skipTimeline,
+        effectiveHiddenSet,
+    });
+    const split = _splitTimelineSection(rawPrompt);
+
+    return {
+        anchorMessageIndex,
+        skipLast,
+        useLatestStructuredSnapshot,
+        anchoredToRecentAssistant: !useLatestStructuredSnapshot && anchorMessageIndex >= 0,
+        rawSnapshotPrompt: split.mainPrompt || '',
+        timelinePrompt: skipTimeline ? '' : (split.timelinePrompt || ''),
+    };
+}
+
+function _decorateMainSendSnapshotPrompt(snapshotPrompt, anchoredToRecentAssistant = false) {
+    const content = typeof snapshotPrompt === 'string' ? snapshotPrompt.trim() : '';
+    if (!content) return '';
+
+    const lang = detectEffectiveAiLang(settings);
+    const L = (zh, en, ja, ko, ru) => {
+        if (lang === 'zh-CN' || lang === 'zh-TW') return zh;
+        if (lang === 'ja') return ja;
+        if (lang === 'ko') return ko;
+        if (lang === 'ru') return ru;
+        return en;
+    };
+
+    const intro = anchoredToRecentAssistant
+        ? L(
+            '以下为经历过更早剧情后的状态快照，不包含后续最新楼层中的新增变化，仅作理解上下文的只读参考。',
+            'The following is a state snapshot after earlier story events. It does not include newly added changes from the later latest floor and is read-only context only.',
+            '以下はより前の展開を経た時点の状態スナップショットです。後続の最新フロアで追加された変化は含まず、文脈理解用の読み取り専用情報です。',
+            '아래는 더 이른 전개까지 반영된 상태 스냅샷입니다. 이후 최신 플로어의 새 변화는 포함하지 않으며, 문맥 이해용 읽기 전용 참고입니다.',
+            'Ниже снимок состояния после более ранних событий. Он не включает новые изменения из более позднего последнего этажа и служит только справочным контекстом.'
+        )
+        : L(
+            '以下为当前可用的状态快照，仅作理解上下文的只读参考。',
+            'The following is the currently available state snapshot and is read-only context only.',
+            '以下は現在利用可能な状態スナップショットであり、文脈理解用の読み取り専用情報です。',
+            '아래는 현재 사용 가능한 상태 스냅샷이며, 문맥 이해용 읽기 전용 참고입니다.',
+            'Ниже доступный на данный момент снимок состояния. Это только справочный контекст.'
+        );
+    const conflictRule = anchoredToRecentAssistant
+        ? L(
+            '若其与后面的最新楼层内容冲突，一律以后面的最新楼层为准。不要在正文中复述、枚举或直接输出该状态快照。',
+            'If it conflicts with the later latest floor, always treat the later latest floor as authoritative. Do not restate, enumerate, or print this snapshot in the main body.',
+            '後続の最新フロア内容と矛盾する場合は、必ず後続の最新フロアを優先してください。このスナップショットを本文で列挙・復唱・直接出力してはいけません。',
+            '뒤의 최신 플로어 내용과 충돌하면 반드시 뒤의 최신 플로어를 우선하세요. 이 스냅샷을 본문에 나열하거나 반복하거나 직접 출력하지 마세요.',
+            'Если он противоречит более позднему последнему этажу, приоритет всегда у более позднего последнего этажа. Не перечисляйте и не выводите этот снимок в основном тексте.'
+        )
+        : L(
+            '不要在正文中复述、枚举或直接输出该状态快照。',
+            'Do not restate, enumerate, or print this snapshot in the main body.',
+            'このスナップショットを本文で列挙・復唱・直接出力してはいけません。',
+            '이 스냅샷을 본문에 나열하거나 반복하거나 직접 출력하지 마세요.',
+            'Не перечисляйте и не выводите этот снимок в основном тексте.'
+        );
+
+    return [
+        L('[Horae 基线状态快照 - 只读参考]', '[Horae Baseline State Snapshot - read only]', '[Horae 基準状態スナップショット - 読み取り専用]', '[Horae 기준 상태 스냅샷 - 읽기 전용]', '[Horae Базовый снимок состояния - только чтение]'),
+        intro,
+        conflictRule,
+        content,
+        L('[/Horae 基线状态快照]', '[/Horae Baseline State Snapshot]', '[/Horae 基準状態スナップショット]', '[/Horae 기준 상태 스냅샷]', '[/Horae Базовый снимок состояния]'),
+    ].join('\n');
+}
+
 /**
  * 解析剧情轨迹在 "[Start a new Chat]" 周围的注入动作：
  * - 至少两个标识：替换第二个标识内容（用于兜底定位符场景）
@@ -19740,6 +19855,24 @@ function _resolveTimelineInsertIndexByStartMarker(promptChat) {
         return { mode: 'insert', index: markerIndices[0] + 1 };
     }
     return null;
+}
+
+function _replaceRecentSplitMarker(promptChat, replacementText = '') {
+    if (!Array.isArray(promptChat) || promptChat.length === 0) return false;
+    for (let i = 0; i < promptChat.length; i++) {
+        const row = promptChat[i];
+        if (!row || row.role !== 'system' || typeof row.content !== 'string') continue;
+        if (!row.content.includes(HORAE_RECENT_SPLIT_MARKER)) continue;
+
+        const nextText = typeof replacementText === 'string' ? replacementText.trim() : '';
+        if (nextText) {
+            promptChat[i].content = nextText;
+        } else {
+            promptChat.splice(i, 1);
+        }
+        return true;
+    }
+    return false;
 }
 
 const HORAE_INTERNAL_NO_VECTOR_RECALL_PREFIX = '[HORAE_INTERNAL:NO_VECTOR_RECALL:';
@@ -20029,12 +20162,16 @@ async function onPromptReady(eventData) {
             skipVectorRecallOnce
         );
 
-        // 发送前：可选补全上一条AI楼层的时间线
-        const autoFillPromise = _autoFillPreviousAiTimelineBeforeInjection(chat);
-        const autoFilledIndex = await autoFillPromise;
-        if (Number.isInteger(autoFilledIndex) && autoFilledIndex >= 0) {
-            _scheduleDeferredVectorMessageIndex(autoFilledIndex, _deriveChatId(getContext()));
-        }
+        // 发送前：后台并发补全上一条AI楼层，不再阻塞本次主回复。
+        _autoFillPreviousAiTimelineBeforeInjection(chat)
+            .then((autoFilledIndex) => {
+                if (Number.isInteger(autoFilledIndex) && autoFilledIndex >= 0) {
+                    _scheduleDeferredVectorMessageIndex(autoFilledIndex, _deriveChatId(getContext()));
+                }
+            })
+            .catch((err) => {
+                console.warn('[Horae] 后台前置补全失败:', err);
+            });
 
         // swipe/regenerate检测
         const skipLast = _resolvePromptReadySkipLast(chat);
@@ -20047,28 +20184,24 @@ async function onPromptReady(eventData) {
 
         const promptVisibility = _buildPromptVisibilityContext(chat, skipLast);
         const effectiveHiddenSet = promptVisibility.effectiveHiddenSet;
-        const rawDataPrompt = horaeManager.generateCompactPrompt(skipLast, {
-            includeTimeline: !skipTimelineInjectionOnce,
+        const latestAssistantIndex = _findLatestAssistantBeforeTrailingUser(chat);
+        const latestAssistantMeta = latestAssistantIndex >= 0
+            ? (horaeManager.getMessageMeta(latestAssistantIndex) || chat?.[latestAssistantIndex]?.horae_meta || null)
+            : null;
+        const useLatestStructuredSnapshot = _hasTimeAndTimeline(latestAssistantMeta);
+        const mainPromptSplit = _buildMainSendPromptSplit(chat, {
             effectiveHiddenSet,
+            skipTimeline: skipTimelineInjectionOnce,
+            fallbackSkipLast: skipLast,
+            useLatestStructuredSnapshot,
         });
-        try {
-            const npcLines = String(rawDataPrompt || '')
-                .split(/\r?\n/)
-                .filter(line => /^N[\d?]+\s+/.test(line.trim()))
-                .slice(0, 100)
-                .map(line => line.length > 220 ? `${line.slice(0, 220)}...` : line);
-            // console.log(
-            //     `[Horae][MainPersonality] onPromptReady: sendMainCharacterPersonality=${!!settings.sendMainCharacterPersonality} sendCharacters=${settings.sendCharacters !== false} context.name2="${getContext()?.name2 || ''}" pinnedNpcs=${JSON.stringify(settings.pinnedNpcs || [])} npcLines=${npcLines.length}`
-            // );
-            // if (npcLines.length > 0) {
-            //     console.log(`[Horae][MainPersonality] onPromptReady npc preview:\n${npcLines.join('\n')}`);
-            // }
-        } catch (e) {
-            // console.warn('[Horae][MainPersonality] onPromptReady debug log failed:', e);
-        }
-        const splitPrompt = _splitTimelineSection(rawDataPrompt);
-        const dataPrompt = splitPrompt.mainPrompt;
-        const timelinePrompt = skipTimelineInjectionOnce ? '' : splitPrompt.timelinePrompt;
+        const snapshotPrompt = useLatestStructuredSnapshot
+            ? String(mainPromptSplit.rawSnapshotPrompt || '').trim()
+            : _decorateMainSendSnapshotPrompt(
+                mainPromptSplit.rawSnapshotPrompt,
+                mainPromptSplit.anchoredToRecentAssistant
+            );
+        const timelinePrompt = mainPromptSplit.timelinePrompt;
         if (skipTimelineInjectionOnce) {
             console.log('[Horae] Internal no-timeline marker detected, skip story timeline injection for this request');
         }
@@ -20109,13 +20242,35 @@ async function onPromptReady(eventData) {
             }
         }
 
-        const combinedPrompt = recallPrompt
-            ? `${dataPrompt}\n${recallPrompt}${antiParaRef}${rulesPrompt ? `\n${rulesPrompt}` : ''}`
-            : `${dataPrompt}${antiParaRef}${rulesPrompt ? `\n${rulesPrompt}` : ''}`;
+        const contextPromptParts = [];
+        if (recallPrompt) contextPromptParts.push(recallPrompt.trim());
+        if (antiParaRef) contextPromptParts.push(antiParaRef.trim());
+        if (rulesPrompt) contextPromptParts.push(rulesPrompt.trim());
+        let combinedPrompt = contextPromptParts.join('\n');
+        if (useLatestStructuredSnapshot) {
+            const removedRecentSplitMarker = _replaceRecentSplitMarker(eventData.chat, '');
+            if (removedRecentSplitMarker) {
+                console.log(`[Horae] 检测到上一条AI楼层 #${latestAssistantIndex} 已有 time+event，移除D2锚点并回到最新状态快照注入`);
+            }
+            if (snapshotPrompt) {
+                combinedPrompt = combinedPrompt ? `${snapshotPrompt}\n${combinedPrompt}` : snapshotPrompt;
+            }
+        } else {
+            const recentSplitReplaced = _replaceRecentSplitMarker(eventData.chat, snapshotPrompt);
+            if (recentSplitReplaced) {
+                console.log(
+                    `[Horae] D2锚点已${snapshotPrompt ? '替换为基线状态快照' : '移除'}`
+                    + `${mainPromptSplit.anchoredToRecentAssistant ? `（锚定楼层 #${mainPromptSplit.anchorMessageIndex} 之前）` : '（回退到当前可用快照）'}`
+                );
+            } else if (snapshotPrompt) {
+                combinedPrompt = combinedPrompt ? `${snapshotPrompt}\n${combinedPrompt}` : snapshotPrompt;
+                console.log('[Horae] D2锚点缺失，已回退为普通位置注入基线状态快照');
+            }
+        }
         const combinedHasHoraetableTag = combinedPrompt.includes('<horaetable:');
         const combinedHasTableKeyword = /(表格|custom table|horaetable|填写要求|instructions)/i.test(combinedPrompt);
         console.log(
-            `[Horae][TableDebug] combinedPrompt: len=${combinedPrompt.length}, dataLen=${dataPrompt.length}, recallLen=${recallPrompt.length}, antiParaLen=${antiParaRef.length}, rulesLen=${rulesPrompt.length}, hasHoraetableTag=${combinedHasHoraetableTag}, hasTableKeyword=${combinedHasTableKeyword}`
+            `[Horae][TableDebug] combinedPrompt: len=${combinedPrompt.length}, snapshotLen=${snapshotPrompt.length}, recallLen=${recallPrompt.length}, antiParaLen=${antiParaRef.length}, rulesLen=${rulesPrompt.length}, hasHoraetableTag=${combinedHasHoraetableTag}, hasTableKeyword=${combinedHasTableKeyword}`
         );
         const positionRaw = parseInt(settings.injectionPosition, 10);
         const position = Number.isNaN(positionRaw) ? 1 : Math.max(0, positionRaw);
@@ -20139,10 +20294,12 @@ async function onPromptReady(eventData) {
                     console.log(`[Horae] Start marker not found, fallback timeline injection at depth -${timelineDepth} (preset@D)${skipLast ? ' (skip last message)' : ''}`);
                 }
             }
-            const len = Array.isArray(eventData.chat) ? eventData.chat.length : 0;
-            const insertIdx = Math.max(0, len - position);
-            eventData.chat.splice(insertIdx, 0, { role: 'system', content: combinedPrompt });
-            console.log(`[Horae] 已注入上下文（预设@D），位置: -${position}${skipLast ? '（已跳过末尾消息）' : ''}${recallPrompt ? '（含向量召回）' : ''}`);
+            if (combinedPrompt) {
+                const len = Array.isArray(eventData.chat) ? eventData.chat.length : 0;
+                const insertIdx = Math.max(0, len - position);
+                eventData.chat.splice(insertIdx, 0, { role: 'system', content: combinedPrompt });
+                console.log(`[Horae] 已注入上下文（预设@D），位置: -${position}${skipLast ? '（已跳过末尾消息）' : ''}${recallPrompt ? '（含向量召回）' : ''}`);
+            }
         } else {
             // 系统 @D：保留原有按聊天楼层定位的注入逻辑
             if (!skipTimelineInjectionOnce && timelinePrompt) {
@@ -20161,9 +20318,11 @@ async function onPromptReady(eventData) {
                 }
             }
 
-            const insertIdx = _resolveInsertIndexByChatAnchor(chat, eventData.chat, position);
-            eventData.chat.splice(insertIdx, 0, { role: 'system', content: combinedPrompt });
-            console.log(`[Horae] 已注入上下文，位置: -${position}${skipLast ? '（已跳过末尾消息）' : ''}${recallPrompt ? '（含向量召回）' : ''}`);
+            if (combinedPrompt) {
+                const insertIdx = _resolveInsertIndexByChatAnchor(chat, eventData.chat, position);
+                eventData.chat.splice(insertIdx, 0, { role: 'system', content: combinedPrompt });
+                console.log(`[Horae] 已注入上下文，位置: -${position}${skipLast ? '（已跳过末尾消息）' : ''}${recallPrompt ? '（含向量召回）' : ''}`);
+            }
         }
     } catch (error) {
         console.error('[Horae] 注入上下文失败:', error);
@@ -20614,13 +20773,23 @@ jQuery(async () => {
     eventSource.on(event_types.GENERATION_AFTER_COMMANDS, () => {
         TavernHelper.injectPrompts([
             {
-                id: "test_prompt_once",
+                id: "horae_start_chat_marker_once",
                 position: "in_chat",
                 depth: 9999,
                 role: "system",
                 content: "[Start a new Chat]"
             }
         ], { once: true }); // 在D9999注入一个定位符
+
+        TavernHelper.injectPrompts([
+            {
+                id: "horae_recent_split_marker_once",
+                position: "in_chat",
+                depth: 2,
+                role: "system",
+                content: "[horae注入锚点] D2"
+            }
+        ], { once: true }); // 在D2注入一个定位符
     });
 
     // 并行自动摘要：用户发消息时并行触发（独立API走直接HTTP，不影响主连接）
