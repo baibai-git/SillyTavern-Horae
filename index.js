@@ -6423,8 +6423,12 @@ function updateRpgDisplay() {
         renderReputationValues();
     }
     if (sendEq) {
-        renderEquipmentValues();
+        const eqAutoApplied = renderEquipmentValues();
         _bindEquipmentEvents();
+        if (eqAutoApplied) {
+            _refreshSystemPromptDisplay();
+            updateTokenCounter();
+        }
     }
     if (sendCur) renderCurrencyConfig();
     if (sendLvl) renderLevelValues();
@@ -7250,8 +7254,8 @@ function renderEquipmentSlotConfig() { /* noop - per-char config in renderEquipm
 /** 渲染统一装备面板（每角色独立格位 + 装备） */
 function renderEquipmentValues() {
     const section = document.getElementById('horae-rpg-eq-values-section');
-    if (!section) return;
-    _autoApplyEquipmentTemplatesByRace({ persist: true });
+    if (!section) return false;
+    const eqAutoApplied = _autoApplyEquipmentTemplatesByRace({ persist: true });
     const eqValues = _getEqValues();
     const cfgMap = _getEqConfigMap();
     const lockBtn = document.getElementById('horae-rpg-eq-lock');
@@ -7266,7 +7270,7 @@ function renderEquipmentValues() {
 
     if (!allOwners.size) {
         section.innerHTML = `<div class="horae-rpg-skills-empty">${t('ui.noEquipCharData')}</div>`;
-        return;
+        return eqAutoApplied;
     }
 
     let html = '';
@@ -7355,6 +7359,7 @@ function renderEquipmentValues() {
     // 隐藏旧的全局格位列表
     const oldList = document.getElementById('horae-rpg-eq-slot-list');
     if (oldList) oldList.innerHTML = '';
+    return eqAutoApplied;
 }
 
 /** 手动添加装备对话框 */
@@ -20434,6 +20439,7 @@ async function onChatChanged() {
 
         _rebuildGlobalDataForCurrentChat();
         await _removeSummariesCoveringDeletedFloors(horaeManager.getChat(), horaeManager.getChat()?.length || 0);
+        _refreshSystemPromptDisplay();
         refreshAllDisplays();
         renderCustomTablesList();
         renderDicePanel();
@@ -20758,9 +20764,8 @@ jQuery(async () => {
     await initDrawer();
     initTabs();
     initSettingsEvents();
-    syncSettingsToUI();
-
     horaeManager.init(getContext(), settings);
+    syncSettingsToUI();
 
     eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onMessageReceived);
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);

@@ -4334,48 +4334,48 @@ RPG 모드가 켜져 있으면 최종 출력은 반드시 세 개의 태그로 �
             const perChar = eqCfg.perChar || {};
             const present = new Set(this.getLatestState(options?.skipLast || 0)?.scene?.characters_present || []);
             const hasAnySlots = Object.values(perChar).some(c => c.slots?.length > 0);
-            if (hasAnySlots) {
+            p += L(
+                `\n【装备】角色穿戴/卸下装备时写，无变化可省略\n`,
+                `\n[Equipment] Write when character equips/unequips; skip if unchanged\n`,
+                `\n【装備】キャラクターが装備/解除した時に記載、変化なしなら省略可\n`,
+                `\n【장비】캐릭터가 장비 착용/해제 시 기재, 변화 없으면 생략 가능\n`,
+                `\n[Снаряжение] Записывайте при экипировке/снятии; пропускайте, если без изменений\n`
+            );
+            if (uoEq) {
                 p += L(
-                    `\n【装备】角色穿戴/卸下装备时写，无变化可省略\n`,
-                    `\n[Equipment] Write when character equips/unequips; skip if unchanged\n`,
-                    `\n【装備】キャラクターが装備/解除した時に記載、変化なしなら省略可\n`,
-                    `\n【장비】캐릭터가 장비 착용/해제 시 기재, 변화 없으면 생략 가능\n`,
-                    `\n[Снаряжение] Записывайте при экипировке/снятии; пропускайте, если без изменений\n`
+                    `  equip:格位名|装备名|属性1=值,属性2=值\n  unequip:格位名|装备名\n`,
+                    `  equip:slot name|item name|stat1=value,stat2=value\n  unequip:slot name|item name\n`,
+                    `  equip:スロット名|アイテム名|属性1=値,属性2=値\n  unequip:スロット名|アイテム名\n`,
+                    `  equip:슬롯명|아이템명|속성1=값,속성2=값\n  unequip:슬롯명|아이템명\n`,
+                    `  equip:слот|предмет|стат1=значение,стат2=значение\n  unequip:слот|предмет\n`
                 );
-                if (uoEq) {
-                    p += L(
-                        `  equip:格位名|装备名|属性1=值,属性2=值\n  unequip:格位名|装备名\n`,
-                        `  equip:slot name|item name|stat1=value,stat2=value\n  unequip:slot name|item name\n`,
-                        `  equip:スロット名|アイテム名|属性1=値,属性2=値\n  unequip:スロット名|アイテム名\n`,
-                        `  equip:슬롯명|아이템명|속성1=값,속성2=값\n  unequip:슬롯명|아이템명\n`,
-                        `  equip:слот|предмет|стат1=значение,стат2=значение\n  unequip:слот|предмет\n`
-                    );
-                    const userCfg = perChar[userName];
-                    if (userCfg?.slots?.length) {
-                        const slotNames = userCfg.slots.map(equipSlotText).join(commaSep);
-                        const formText = userCfg.currentForm && userCfg.forms?.length
-                            ? ` ${L('当前形态', 'current form', '現在形態', '현재 형태', 'текущая форма')}:${(userCfg.forms.find(f => f.id === userCfg.currentForm)?.name || userCfg.currentForm)}`
-                            : '';
-                        p += L(`  格位${formText}: ${slotNames}\n`, `  Slots${formText}: ${slotNames}\n`, `  スロット${formText}: ${slotNames}\n`, `  슬롯${formText}: ${slotNames}\n`, `  Слоты${formText}: ${slotNames}\n`);
-                    }
-                } else {
-                    p += L(
-                        `  equip:归属|格位名|装备名|属性1=值,属性2=值\n  unequip:归属|格位名|装备名\n`,
-                        `  equip:${own}|slot name|item name|stat1=value,stat2=value\n  unequip:${own}|slot name|item name\n`,
-                        `  equip:${own}|スロット名|アイテム名|属性1=値,属性2=値\n  unequip:${own}|スロット名|アイテム名\n`,
-                        `  equip:${own}|슬롯명|아이템명|속성1=값,속성2=값\n  unequip:${own}|슬롯명|아이템명\n`,
-                        `  equip:${own}|слот|предмет|стат1=значение,стат2=значение\n  unequip:${own}|слот|предмет\n`
-                    );
-                    for (const [o, cfg] of Object.entries(perChar)) {
-                        if (!cfg.slots?.length) continue;
-                        if (present.size > 0 && !present.has(o)) continue;
-                        const slotNames = cfg.slots.map(equipSlotText).join(commaSep);
-                        const formText = cfg.currentForm && cfg.forms?.length
-                            ? ` ${L('当前形态', 'current form', '現在形態', '현재 형태', 'текущая форма')}:${(cfg.forms.find(f => f.id === cfg.currentForm)?.name || cfg.currentForm)}`
-                            : '';
-                        p += L(`  ${o} 格位${formText}: ${slotNames}\n`, `  ${o} slots${formText}: ${slotNames}\n`, `  ${o} スロット${formText}: ${slotNames}\n`, `  ${o} 슬롯${formText}: ${slotNames}\n`, `  ${o} слоты${formText}: ${slotNames}\n`);
-                    }
+                const userCfg = perChar[userName];
+                if (userCfg?.slots?.length) {
+                    const slotNames = userCfg.slots.map(equipSlotText).join(commaSep);
+                    const formText = userCfg.currentForm && userCfg.forms?.length
+                        ? ` ${L('当前形态', 'current form', '現在形態', '현재 형태', 'текущая форма')}:${(userCfg.forms.find(f => f.id === userCfg.currentForm)?.name || userCfg.currentForm)}`
+                        : '';
+                    p += L(`  格位${formText}: ${slotNames}\n`, `  Slots${formText}: ${slotNames}\n`, `  スロット${formText}: ${slotNames}\n`, `  슬롯${formText}: ${slotNames}\n`, `  Слоты${formText}: ${slotNames}\n`);
                 }
+            } else {
+                p += L(
+                    `  equip:归属|格位名|装备名|属性1=值,属性2=值\n  unequip:归属|格位名|装备名\n`,
+                    `  equip:${own}|slot name|item name|stat1=value,stat2=value\n  unequip:${own}|slot name|item name\n`,
+                    `  equip:${own}|スロット名|アイテム名|属性1=値,属性2=値\n  unequip:${own}|スロット名|アイテム名\n`,
+                    `  equip:${own}|슬롯명|아이템명|속성1=값,속성2=값\n  unequip:${own}|슬롯명|아이템명\n`,
+                    `  equip:${own}|слот|предмет|стат1=значение,стат2=значение\n  unequip:${own}|слот|предмет\n`
+                );
+                for (const [o, cfg] of Object.entries(perChar)) {
+                    if (!cfg.slots?.length) continue;
+                    if (present.size > 0 && !present.has(o)) continue;
+                    const slotNames = cfg.slots.map(equipSlotText).join(commaSep);
+                    const formText = cfg.currentForm && cfg.forms?.length
+                        ? ` ${L('当前形态', 'current form', '現在形態', '현재 형태', 'текущая форма')}:${(cfg.forms.find(f => f.id === cfg.currentForm)?.name || cfg.currentForm)}`
+                        : '';
+                    p += L(`  ${o} 格位${formText}: ${slotNames}\n`, `  ${o} slots${formText}: ${slotNames}\n`, `  ${o} スロット${formText}: ${slotNames}\n`, `  ${o} 슬롯${formText}: ${slotNames}\n`, `  ${o} слоты${formText}: ${slotNames}\n`);
+                }
+            }
+            if (hasAnySlots) {
                 p += L(
                     `  ⚠ 每个角色只能使用其当前形态已注册的格位。属性值为整数。\n  ⚠ 形态切换时，不兼容装备视为未激活，不要自动卸下或写回物品栏。\n  ⚠ 普通衣物非赋魔或特殊材料不应有高属性值。\n`,
                     `  ⚠ Each character may only use slots registered for the current form. Stat values must be integers.\n  ⚠ When form changes, incompatible equipment is inactive; do not auto-unequip or return it to inventory.\n  ⚠ Normal clothing without enchantment or special materials should NOT have high stat values.\n`,
@@ -4383,15 +4383,31 @@ RPG 모드가 켜져 있으면 최종 출력은 반드시 세 개의 태그로 �
                     `  ⚠ 각 캐릭터는 현재 형태에 등록된 슬롯만 사용할 수 있습니다. 속성값은 정수여야 합니다.\n  ⚠ 형태 변경 시 호환되지 않는 장비는 비활성 상태입니다. 자동으로 해제하거나 인벤토리로 돌려보내지 마세요.\n  ⚠ 마법 부여나 특수 재료가 없는 일반 의류에는 높은 속성값을 부여하지 마세요.\n`,
                     `  ⚠ Каждый персонаж может использовать только слоты текущей формы. Значения характеристик — целые числа.\n  ⚠ При смене формы несовместимое снаряжение неактивно; не снимайте его автоматически и не возвращайте в инвентарь.\n  ⚠ Обычная одежда без зачарования или особых материалов НЕ должна иметь высоких значений характеристик.\n`
                 );
-                if (eqCfg.locked) {
-                    p += L(
-                        `  ⚠ 装备格位已锁定：禁止创造新格位，未列出的格位会被忽略。\n`,
-                        `  ⚠ Equipment slots are locked: do NOT create new slots; unlisted slots will be ignored.\n`,
-                        `  ⚠ 装備スロットはロック中：新規スロット作成禁止。未記載スロットは無視されます。\n`,
-                        `  ⚠ 장비 슬롯이 잠겨 있습니다: 새 슬롯을 만들지 마세요. 목록에 없는 슬롯은 무시됩니다.\n`,
-                        `  ⚠ Слоты снаряжения заблокированы: не создавайте новые слоты; отсутствующие в списке будут проигнорированы.\n`
-                    );
-                }
+            } else if (eqCfg.locked) {
+                p += L(
+                    `  ⚠ 当前未注册任何装备格位，且装备格位已锁定。此时不要输出 equip/unequip 行；请先在面板中为角色配置格位。\n`,
+                    `  ⚠ No equipment slots are currently registered, and slots are locked. Do NOT output equip/unequip lines in this state; configure slots for the character first.\n`,
+                    `  ⚠ 現在、登録済みの装備スロットがありません。しかもスロットはロック中です。この状態では equip/unequip 行を出力せず、先にパネルでスロットを設定してください。\n`,
+                    `  ⚠ 현재 등록된 장비 슬롯이 없고 슬롯이 잠겨 있습니다. 이 상태에서는 equip/unequip 행을 출력하지 말고, 먼저 패널에서 슬롯을 설정하세요.\n`,
+                    `  ⚠ Сейчас не зарегистрировано ни одного слота снаряжения, и слоты заблокированы. В этом состоянии НЕ выводите строки equip/unequip; сначала настройте слоты для персонажа.\n`
+                );
+            } else {
+                p += L(
+                    `  ⚠ 当前未注册任何装备格位；如剧情发生装备变化，仍按上方格式输出。格位名请使用简短、稳定、可复用的通用名（如 武器/头部/上衣/戒指）。\n  ⚠ 属性值为整数。普通衣物非赋魔或特殊材料不应有高属性值。\n`,
+                    `  ⚠ No equipment slots are currently registered. If equipment changes happen in the story, still output them using the format above. Use short, stable, reusable generic slot names (for example weapon/head/top/ring).\n  ⚠ Stat values must be integers. Normal clothing without enchantment or special materials should NOT have high stat values.\n`,
+                    `  ⚠ 現在、登録済みの装備スロットがありません。物語で装備の変化が起きた場合でも、上記形式で出力してください。スロット名は短く安定した再利用可能な汎用名（例：武器/頭部/上衣/指輪）を使用してください。\n  ⚠ 属性値は整数であること。エンチャントや特殊素材のない普通の衣服には高い属性値を付けないこと。\n`,
+                    `  ⚠ 현재 등록된 장비 슬롯이 없습니다. 이야기에서 장비 변화가 발생하면 위 형식대로 계속 출력하세요. 슬롯명은 짧고 안정적이며 재사용 가능한 일반 명칭(예: 무기/머리/상의/반지)을 사용하세요.\n  ⚠ 속성값은 정수여야 합니다. 마법 부여나 특수 재료가 없는 일반 의류에는 높은 속성값을 부여하지 마세요.\n`,
+                    `  ⚠ Сейчас не зарегистрировано ни одного слота снаряжения. Если в сюжете происходят изменения экипировки, всё равно выводите их в формате выше. Используйте короткие, стабильные, повторно используемые общие названия слотов (например оружие/голова/верх/кольцо).\n  ⚠ Значения характеристик должны быть целыми. Обычная одежда без зачарования или особых материалов НЕ должна иметь высоких значений характеристик.\n`
+                );
+            }
+            if (hasAnySlots && eqCfg.locked) {
+                p += L(
+                    `  ⚠ 装备格位已锁定：禁止创造新格位，未列出的格位会被忽略。\n`,
+                    `  ⚠ Equipment slots are locked: do NOT create new slots; unlisted slots will be ignored.\n`,
+                    `  ⚠ 装備スロットはロック中：新規スロット作成禁止。未記載スロットは無視されます。\n`,
+                    `  ⚠ 장비 슬롯이 잠겨 있습니다: 새 슬롯을 만들지 마세요. 목록에 없는 슬롯은 무시됩니다.\n`,
+                    `  ⚠ Слоты снаряжения заблокированы: не создавайте новые слоты; отсутствующие в списке будут проигнорированы.\n`
+                );
             }
         }
         if (sendRep) {
