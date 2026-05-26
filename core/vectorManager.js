@@ -31,6 +31,7 @@ const QUERY_REWRITE_SNAPSHOT_MAX_ITEMS = 12;
 const QUERY_REWRITE_SNAPSHOT_MAX_AGENDA = 5;
 const QUERY_REWRITE_EVENT_SUMMARY_LIMIT = 5;
 const QUERY_REWRITE_EVENT_SUMMARY_MAX_CHARS = 1000;
+const RERANK_BATCH_MAX_CONCURRENCY = 4;
 const QUERY_REWRITE_REQUEST_DEFAULTS = Object.freeze({
     temperature: 0.1,
     top_p: 0.8,
@@ -1689,25 +1690,7 @@ export class VectorManager {
                             console.log(`[Horae Vector] Rerank 分批: batches=${rerankPlan.batches.length} / budget=${rerankPlan.docBudget} tokens / query=${rerankPlan.queryTokens} tokens / truncated=${rerankPlan.truncatedCount}`);
                         }
 
-                        const merged = [];
-                        for (let bi = 0; bi < rerankPlan.batches.length; bi++) {
-                            const batch = rerankPlan.batches[bi];
-                            console.log(`[Horae Vector] Rerank batch ${bi + 1}/${rerankPlan.batches.length}: docs=${batch.documents.length}, estTokens=${batch.estimatedTokens}`);
-                            const batchReranked = await this._rerank(
-                                rerankQuery,
-                                batch.documents,
-                                batch.documents.length,
-                                settings
-                            );
-                            for (const rr of batchReranked) {
-                                const globalIndex = batch.indices[rr.index];
-                                if (globalIndex === undefined) continue;
-                                merged.push({
-                                    index: globalIndex,
-                                    relevance_score: rr.relevance_score,
-                                });
-                            }
-                        }
+                        const merged = await this._rerankBatches(rerankQuery, rerankPlan, settings);
 
                         const bestByIndex = new Map();
                         for (const rr of merged) {
@@ -1763,6 +1746,7 @@ export class VectorManager {
                                 budgetTokens: rerankPlan.docBudget,
                                 queryTokens: rerankPlan.queryTokens,
                                 batchCount: rerankPlan.batches.length,
+                                batchConcurrency: Math.min(RERANK_BATCH_MAX_CONCURRENCY, rerankPlan.batches.length),
                                 truncatedCount: rerankPlan.truncatedCount,
                                 batches: rerankPlan.batches.map((b, idx) => ({
                                     batch: idx + 1,
@@ -3369,6 +3353,47 @@ export class VectorManager {
             safeUsageRatio,
             staticReserve,
         };
+    }
+
+    async _rerankBatches(query, rerankPlan, settings) {
+        const totalBatches = rerankPlan?.batches?.length || 0;
+        if (totalBatches === 0) return [];
+
+        const concurrency = Math.min(RERANK_BATCH_MAX_CONCURRENCY, totalBatches);
+        if (concurrency > 1) {
+            console.log(`[Horae Vector] Rerank 并行批处理: concurrency=${concurrency}`);
+        }
+
+        let nextBatchIndex = 0;
+        const workers = Array.from({ length: concurrency }, async () => {
+            const localMerged = [];
+            while (true) {
+                const bi = nextBatchIndex++;
+                if (bi >= totalBatches) break;
+
+                const batch = rerankPlan.batches[bi];
+                console.log(`[Horae Vector] Rerank batch ${bi + 1}/${totalBatches}: docs=${batch.documents.length}, estTokens=${batch.estimatedTokens}`);
+                const batchReranked = await this._rerank(
+                    query,
+                    batch.documents,
+                    batch.documents.length,
+                    settings
+                );
+
+                for (const rr of batchReranked) {
+                    const globalIndex = batch.indices[rr.index];
+                    if (globalIndex === undefined) continue;
+                    localMerged.push({
+                        index: globalIndex,
+                        relevance_score: rr.relevance_score,
+                    });
+                }
+            }
+            return localMerged;
+        });
+
+        const mergedGroups = await Promise.all(workers);
+        return mergedGroups.flat();
     }
 
     /**
