@@ -18258,6 +18258,141 @@ function _buildImportObjectFromChat(chat) {
     };
 }
 
+function _buildImportObjectFromChatRange(chat, endExclusive) {
+    const cutoff = Number.isInteger(endExclusive)
+        ? Math.max(0, endExclusive)
+        : (Array.isArray(chat) ? chat.length : 0);
+
+    return {
+        version: VERSION,
+        exportTime: new Date().toISOString(),
+        data: (chat || [])
+            .map((msg, index) => ({ index, horae_meta: _deepCloneData(msg?.horae_meta || null) }))
+            .filter(item => item.horae_meta && item.index < cutoff),
+    };
+}
+
+function _isAgendaTextMatch(leftText, rightText) {
+    const left = String(leftText || '').trim();
+    const right = String(rightText || '').trim();
+    if (!left || !right) return false;
+    return left === right || left.includes(right) || right.includes(left);
+}
+
+function _removeAgendaItemsByText(agendaItems, deletedText) {
+    const normalized = String(deletedText || '').trim();
+    if (!normalized) return;
+    for (let i = agendaItems.length - 1; i >= 0; i--) {
+        if (_isAgendaTextMatch(agendaItems[i]?.text, normalized)) {
+            agendaItems.splice(i, 1);
+        }
+    }
+}
+
+function _collectCarryoverAgendaSeed(chat, endExclusive) {
+    if (!Array.isArray(chat) || chat.length === 0) return [];
+
+    const agendaItems = [];
+    const agendaEnd = Math.max(0, Math.min(chat.length, endExclusive));
+
+    const pushAgenda = (rawItem, fallbackSource = 'ai') => {
+        const text = String(rawItem?.text || '').trim();
+        if (!text || rawItem?._deleted || rawItem?.done) return;
+
+        const nextItem = {
+            type: horaeManager.normalizeAgendaType(rawItem?.type),
+            date: String(rawItem?.date || '').trim(),
+            text,
+            source: rawItem?.source || fallbackSource,
+            done: false,
+        };
+
+        const existingIndex = agendaItems.findIndex(item => item.text === text);
+        if (existingIndex >= 0) {
+            agendaItems[existingIndex] = nextItem;
+        } else {
+            agendaItems.push(nextItem);
+        }
+    };
+
+    const currentUserAgenda = chat[0]?.horae_meta?.agenda || [];
+    for (const item of currentUserAgenda) {
+        pushAgenda(item, 'user');
+    }
+
+    for (let i = 0; i < agendaEnd; i++) {
+        const messageContent = chat[i]?.mes;
+        if (!messageContent) continue;
+
+        const { parsed } = horaeManager.parseMessageContent(messageContent, { stripCustomTags: true });
+        if (!parsed) continue;
+
+        if (parsed.agenda?.length > 0) {
+            for (const item of parsed.agenda) {
+                pushAgenda(item, i === 0 ? 'user' : 'ai');
+            }
+        }
+
+        if (parsed.deletedAgenda?.length > 0) {
+            for (const deletedText of parsed.deletedAgenda) {
+                _removeAgendaItemsByText(agendaItems, deletedText);
+            }
+        }
+    }
+
+    return agendaItems;
+}
+
+function _buildCarryoverStateSeedMeta(chat, endExclusive) {
+    const cutoff = Number.isInteger(endExclusive)
+        ? Math.max(0, Math.min(chat?.length || 0, endExclusive))
+        : (Array.isArray(chat) ? chat.length : 0);
+    const skipLast = Math.max(0, (chat?.length || 0) - cutoff);
+    const latestState = horaeManager.getLatestState(skipLast);
+    const seedMeta = createEmptyMeta();
+
+    seedMeta.timestamp = _deepCloneData(latestState?.timestamp || seedMeta.timestamp);
+    seedMeta.scene = {
+        ...seedMeta.scene,
+        location: latestState?.scene?.location || '',
+        characters_present: _deepCloneData(latestState?.scene?.characters_present || []),
+        atmosphere: latestState?.scene?.atmosphere || '',
+    };
+    seedMeta.costumes = _deepCloneData(latestState?.costumes || {});
+    seedMeta.items = _deepCloneData(latestState?.items || {});
+    seedMeta.affection = _deepCloneData(latestState?.affection || {});
+    seedMeta.npcs = _deepCloneData(latestState?.npcs || {});
+    seedMeta.mood = _deepCloneData(latestState?.mood || {});
+    seedMeta.agenda = _collectCarryoverAgendaSeed(chat, cutoff);
+    seedMeta.deletedItems = [];
+    seedMeta.deletedAgenda = [];
+
+    return seedMeta;
+}
+
+function _applyCarryoverStateSeed(targetMeta, seedMeta) {
+    const target = targetMeta || createEmptyMeta();
+    const seed = seedMeta || createEmptyMeta();
+
+    target.timestamp = _deepCloneData(seed.timestamp || createEmptyMeta().timestamp);
+    target.scene = {
+        ...(target.scene || {}),
+        location: seed?.scene?.location || '',
+        characters_present: _deepCloneData(seed?.scene?.characters_present || []),
+        atmosphere: seed?.scene?.atmosphere || '',
+    };
+    target.costumes = _deepCloneData(seed.costumes || {});
+    target.items = _deepCloneData(seed.items || {});
+    target.deletedItems = [];
+    target.affection = _deepCloneData(seed.affection || {});
+    target.npcs = _deepCloneData(seed.npcs || {});
+    target.agenda = _deepCloneData(seed.agenda || []);
+    target.deletedAgenda = [];
+    target.mood = _deepCloneData(seed.mood || {});
+
+    return target;
+}
+
 function _getCarryVisibleIndices(chat, keepCount) {
     const result = { indices: [], aiCount: 0 };
     if (!Array.isArray(chat) || chat.length <= 1) return result;
@@ -18330,6 +18465,8 @@ async function createNewChatWithCarryover() {
     const carryAiCount = carryPlan.aiCount;
     const carryMessages = carryIndices.map(i => _sanitizeCarryMessage(sourceChat[i])).filter(Boolean);
     const carryStart = carryIndices.length > 0 ? carryIndices[0] : sourceChat.length;
+    const carrySeedMeta = _buildCarryoverStateSeedMeta(sourceChat, carryStart);
+    const baselineImportObj = _buildImportObjectFromChatRange(sourceChat, carryStart);
     const recapTexts = _collectCarryoverRecapTexts(sourceChat, carryStart);
     const recapText = _composeCarryoverRecapText(recapTexts);
     const importObj = _buildImportObjectFromChat(sourceChat);
@@ -18360,7 +18497,14 @@ async function createNewChatWithCarryover() {
         const removedPreludeCount = carryMessages.length > 0 ? _stripFreshChatPreludeForCarryover(targetChat) : 0;
         if (targetChat.length === 0) targetChat.push(_createCarryoverAnchorMessage());
 
-        _importAsInitialState(importObj, targetChat, { includeTimeline: false });
+        if (baselineImportObj.data.length > 0) {
+            _importAsInitialState(baselineImportObj, targetChat, { includeTimeline: false });
+        } else if (!targetChat[0].horae_meta) {
+            targetChat[0].horae_meta = createEmptyMeta();
+        }
+
+        _applyCarryoverStateSeed(targetChat[0].horae_meta, carrySeedMeta);
+        targetChat[0].mes = buildHoraeTagFromMeta(carrySeedMeta);
 
         if (!targetChat[0].horae_meta) targetChat[0].horae_meta = createEmptyMeta();
         if (!Array.isArray(targetChat[0].horae_meta.events)) targetChat[0].horae_meta.events = [];
