@@ -8,6 +8,7 @@ const _cache = new Map(); // lang -> prompts object | null
 let _basePath = '';
 const _promptFileMap = Object.freeze({
     customSystemPrompt: 'customSystemPrompt.txt',
+    customSubApiBodyPrompt: 'customSubApiBodyPrompt.txt',
     customAntiParaphrasePrompt: 'customAntiParaphrasePrompt.txt',
     customBatchPrompt: 'customBatchPrompt.txt',
     customAnalysisPrompt: 'customAnalysisPrompt.txt',

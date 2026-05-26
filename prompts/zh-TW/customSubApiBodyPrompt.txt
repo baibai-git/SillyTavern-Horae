@@ -1,0 +1,7 @@
+在正文前後，都必須輸出當前時間，如：
+
+<startTime>xxx</startTime>
+正文
+正文
+正文
+<endTime>xxx</endTime>

@@ -11,7 +11,7 @@
                 <i class="fa-regular fa-clock"></i>
                 Horae 时光记忆
             </div>
-            <span class="horae-version">1.14.4B</span>
+            <span class="horae-version">1.14.5B</span>
         </div>
 
         <!-- 标签页导航 -->
@@ -1672,7 +1672,7 @@
 
                         <div class="horae-prompt-editor-group">
                             <div class="horae-prompt-editor-header">
-                                <span data-i18n="prompts.systemPrompt">系统注入提示词</span>
+                                <span data-i18n="prompts.systemPrompt">主API正文注入提示词</span>
                                 <button id="horae-btn-reset-system-prompt" class="horae-btn-reset-prompt"
                                     data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
                                     <i class="fa-solid fa-rotate-left"></i> 恢复默认
@@ -1682,6 +1682,22 @@
                                 placeholder="留空使用默认提示词..."></textarea>
                             <div class="horae-prompt-char-count">
                                 <span id="horae-system-prompt-count">0</span> 字符
+                            </div>
+                        </div>
+
+                        <div class="horae-prompt-editor-group" style="margin-top: 12px;">
+                            <div class="horae-prompt-editor-header">
+                                <span data-i18n="prompts.subApiBodyPrompt">副API正文注入提示词</span>
+                                <button id="horae-btn-reset-sub-api-body-prompt" class="horae-btn-reset-prompt"
+                                    data-i18n="common.restoreDefault" data-i18n-title="tooltip.restoreDefault" title="">
+                                    <i class="fa-solid fa-rotate-left"></i> 恢复默认
+                                </button>
+                            </div>
+                            <textarea id="horae-custom-sub-api-body-prompt" class="horae-prompt-textarea" rows="6"
+                                data-i18n-placeholder="prompts.subApiBodyPromptPlaceholder"
+                                placeholder="留空使用默认提示词..."></textarea>
+                            <div class="horae-prompt-char-count">
+                                <span id="horae-sub-api-body-prompt-count">0</span> 字符
                             </div>
                         </div>
 
@@ -1913,7 +1929,7 @@
                 </div>
 
                 <div class="horae-about">
-                    <p>Horae v1.14.4B | 作者: SenriYuki，柏柏</p>
+                    <p>Horae v1.14.5B | 作者: SenriYuki，柏柏</p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>

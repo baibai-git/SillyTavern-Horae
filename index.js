@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki，柏柏
- * 版本: 1.14.4B
+ * 版本: 1.14.5B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -17,7 +17,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.4B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.5B';
 
 // ============================================
 // 常量定义
@@ -25,7 +25,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.14.4B';
+const VERSION = '1.14.5B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -183,7 +183,8 @@ const DEFAULT_SETTINGS = {
     sendMainCharacterPersonality: false, // 发送主要角色性格（子选项，默认关闭）
     sendItems: true,       // 发送物品栏
     customTables: [],      // 自定义表格 [{id, name, rows, cols, data, prompt}]
-    customSystemPrompt: '',      // 自定义系统注入提示词（空=使用默认）
+    customSystemPrompt: '',      // 自定义主API正文注入提示词（空=使用默认）
+    customSubApiBodyPrompt: '',  // 自定义副API正文注入提示词（空=使用默认）
     customBatchPrompt: '',       // 自定义AI摘要提示词（空=使用默认）
     customAnalysisPrompt: '',    // 自定义AI分析提示词（空=使用默认）
     customCompressPrompt: '',    // 自定义剧情压缩提示词（空=使用默认）
@@ -293,6 +294,7 @@ const DEFAULT_SETTINGS = {
 
 const PROMPT_SETTING_KEYS = [
     'customSystemPrompt',
+    'customSubApiBodyPrompt',
     'customBatchPrompt',
     'customAnalysisPrompt',
     'customCompressPrompt',
@@ -9135,9 +9137,7 @@ function updateTokenCounter() {
     if (!el) return;
     try {
         const dataPrompt = horaeManager.generateCompactPrompt();
-        const rulesPrompt = _shouldSkipSystemPromptInjectionOnSend()
-            ? ''
-            : horaeManager.generateSystemPromptAddition();
+        const { prompt: rulesPrompt } = _getBodyInjectionPromptOnSend();
         const combined = rulesPrompt ? `${dataPrompt}\n${rulesPrompt}` : dataPrompt;
         const tokens = estimateTokens(combined);
         el.textContent = `≈ ${tokens.toLocaleString()}`;
@@ -12855,6 +12855,7 @@ function initSettingsEvents() {
         saveSettings();
         const pairs = [
             ['customSystemPrompt', 'horae-custom-system-prompt', 'horae-system-prompt-count', () => horaeManager.getDefaultSystemPrompt()],
+            ['customSubApiBodyPrompt', 'horae-custom-sub-api-body-prompt', 'horae-sub-api-body-prompt-count', () => getDefaultSubApiBodyPrompt()],
             ['customBatchPrompt', 'horae-custom-batch-prompt', 'horae-batch-prompt-count', () => getDefaultBatchPrompt()],
             ['customAnalysisPrompt', 'horae-custom-analysis-prompt', 'horae-analysis-prompt-count', () => getDefaultAnalysisPrompt()],
             ['customCompressPrompt', 'horae-custom-compress-prompt', 'horae-compress-prompt-count', () => getDefaultCompressPrompt()],
@@ -12975,6 +12976,7 @@ function initSettingsEvents() {
         saveSettings();
         const pairs = [
             ['customSystemPrompt', 'horae-custom-system-prompt', 'horae-system-prompt-count', () => horaeManager.getDefaultSystemPrompt()],
+            ['customSubApiBodyPrompt', 'horae-custom-sub-api-body-prompt', 'horae-sub-api-body-prompt-count', () => getDefaultSubApiBodyPrompt()],
             ['customBatchPrompt', 'horae-custom-batch-prompt', 'horae-batch-prompt-count', () => getDefaultBatchPrompt()],
             ['customAnalysisPrompt', 'horae-custom-analysis-prompt', 'horae-analysis-prompt-count', () => getDefaultAnalysisPrompt()],
             ['customCompressPrompt', 'horae-custom-compress-prompt', 'horae-compress-prompt-count', () => getDefaultCompressPrompt()],
@@ -13449,6 +13451,7 @@ function initSettingsEvents() {
             _ensureAutoFillPrevTimelineForSubApiBriefScope();
         }
         saveSettings();
+        updateTokenCounter();
     });
 
     $('#horae-btn-fetch-models').on('click', fetchAndPopulateModels);
@@ -13566,6 +13569,14 @@ function initSettingsEvents() {
         updateTokenCounter();
     });
 
+    $('#horae-custom-sub-api-body-prompt').on('input', function () {
+        const val = this.value;
+        settings.customSubApiBodyPrompt = (val.trim() === getDefaultSubApiBodyPrompt().trim()) ? '' : val;
+        $('#horae-sub-api-body-prompt-count').text(val.length);
+        saveSettings();
+        updateTokenCounter();
+    });
+
     $('#horae-custom-batch-prompt').on('input', function () {
         const val = this.value;
         settings.customBatchPrompt = (val.trim() === getDefaultBatchPrompt().trim()) ? '' : val;
@@ -13591,6 +13602,17 @@ function initSettingsEvents() {
         $('#horae-custom-system-prompt').val(def);
         $('#horae-system-prompt-count').text(def.length);
         horaeManager.init(getContext(), settings);
+        updateTokenCounter();
+        showToast(t('toast.promptsRestored'), 'success');
+    });
+
+    $('#horae-btn-reset-sub-api-body-prompt').on('click', () => {
+        if (!confirm(t('confirm.restoreRpgPrompts'))) return;
+        settings.customSubApiBodyPrompt = '';
+        saveSettings();
+        const def = getDefaultSubApiBodyPrompt();
+        $('#horae-custom-sub-api-body-prompt').val(def);
+        $('#horae-sub-api-body-prompt-count').text(def.length);
         updateTokenCounter();
         showToast(t('toast.promptsRestored'), 'success');
     });
@@ -14072,6 +14094,7 @@ function initSettingsEvents() {
 function _refreshSystemPromptDisplay() {
     const pairs = [
         ['customSystemPrompt', 'horae-custom-system-prompt', 'horae-system-prompt-count', () => horaeManager.getDefaultSystemPrompt()],
+        ['customSubApiBodyPrompt', 'horae-custom-sub-api-body-prompt', 'horae-sub-api-body-prompt-count', () => getDefaultSubApiBodyPrompt()],
         ['customBatchPrompt', 'horae-custom-batch-prompt', 'horae-batch-prompt-count', () => getDefaultBatchPrompt()],
         ['customAnalysisPrompt', 'horae-custom-analysis-prompt', 'horae-analysis-prompt-count', () => getDefaultAnalysisPrompt()],
         ['customCompressPrompt', 'horae-custom-compress-prompt', 'horae-compress-prompt-count', () => getDefaultCompressPrompt()],
@@ -14393,6 +14416,7 @@ function syncSettingsToUI() {
     updateAutoSummaryHint();
 
     const sysPrompt = settings.customSystemPrompt || horaeManager.getDefaultSystemPrompt();
+    const subApiBodyPromptVal = settings.customSubApiBodyPrompt || getDefaultSubApiBodyPrompt();
     const batchPromptVal = settings.customBatchPrompt || getDefaultBatchPrompt();
     const analysisPromptVal = settings.customAnalysisPrompt || getDefaultAnalysisPrompt();
     const compressPromptVal = settings.customCompressPrompt || getDefaultCompressPrompt();
@@ -14406,6 +14430,7 @@ function syncSettingsToUI() {
     const moodPromptVal = settings.customMoodPrompt || horaeManager.getDefaultMoodPrompt();
     const rpgPromptVal = settings.customRpgPrompt || horaeManager.getDefaultRpgPromptResolved();
     $('#horae-custom-system-prompt').val(sysPrompt);
+    $('#horae-custom-sub-api-body-prompt').val(subApiBodyPromptVal);
     $('#horae-custom-batch-prompt').val(batchPromptVal);
     $('#horae-custom-analysis-prompt').val(analysisPromptVal);
     $('#horae-custom-compress-prompt').val(compressPromptVal);
@@ -14419,6 +14444,7 @@ function syncSettingsToUI() {
     $('#horae-custom-mood-prompt').val(moodPromptVal);
     $('#horae-custom-rpg-prompt').val(rpgPromptVal);
     $('#horae-system-prompt-count').text(sysPrompt.length);
+    $('#horae-sub-api-body-prompt-count').text(subApiBodyPromptVal.length);
     $('#horae-batch-prompt-count').text(batchPromptVal.length);
     $('#horae-analysis-prompt-count').text(analysisPromptVal.length);
     $('#horae-compress-prompt-count').text(compressPromptVal.length);
@@ -14923,6 +14949,10 @@ function getDefaultBatchPrompt() {
     return _getPromptDefaultFromResource('customBatchPrompt') || '';
 }
 
+function getDefaultSubApiBodyPrompt() {
+    return _getPromptDefaultFromResource('customSubApiBodyPrompt') || '';
+}
+
 function getDefaultAnalysisPrompt() {
     return _getPromptDefaultFromResource('customAnalysisPrompt') || '';
 }
@@ -14941,8 +14971,24 @@ function _isSubApiScopeEnabled(taskType = '') {
 }
 
 function _shouldSkipSystemPromptInjectionOnSend() {
-    // 副API「摘要」开启后，发送新消息时不再把系统注入提示词送给主回复模型。
+    // 副API「摘要」开启后，发送新消息时不再把主API正文注入提示词送给主回复模型。
     return !!settings.subApiScopeBrief;
+}
+
+function _getBodyInjectionPromptOnSend(opts = {}) {
+    if (opts?.skipByMarker) {
+        return { prompt: '', mode: 'skip' };
+    }
+    if (_shouldSkipSystemPromptInjectionOnSend()) {
+        return {
+            prompt: String(settings.customSubApiBodyPrompt || getDefaultSubApiBodyPrompt() || ''),
+            mode: 'subApiBody',
+        };
+    }
+    return {
+        prompt: horaeManager.generateSystemPromptAddition(),
+        mode: 'mainApiBody',
+    };
 }
 
 function _shouldInjectCustomPrompts(taskType = '', opts = {}) {
@@ -20358,23 +20404,24 @@ async function onPromptReady(eventData) {
         const recallPrompt = await vectorRecallPromise;
 
         const skipByBriefScope = _shouldSkipSystemPromptInjectionOnSend();
-        const skipSystemPromptOnSend = skipByBriefScope || skipSystemPromptInjectionOnce;
-        const rulesPrompt = skipSystemPromptOnSend ? '' : horaeManager.generateSystemPromptAddition();
+        const bodyInjection = _getBodyInjectionPromptOnSend({ skipByMarker: skipSystemPromptInjectionOnce });
+        const rulesPrompt = bodyInjection.prompt;
+        const skipSystemPromptOnSend = bodyInjection.mode === 'skip';
         const rulesHasHoraetableTag = rulesPrompt.includes('<horaetable:');
         const rulesHasTableKeyword = /(表格|custom table|horaetable|填写要求|instructions)/i.test(rulesPrompt);
         console.log(
-            `[Horae][TableDebug] onPromptReady rules: skip=${skipSystemPromptOnSend}, skipByBriefScope=${skipByBriefScope}, skipByMarker=${skipSystemPromptInjectionOnce}, subApiScopeBrief=${!!settings.subApiScopeBrief}, rulesLen=${rulesPrompt.length}, hasHoraetableTag=${rulesHasHoraetableTag}, hasTableKeyword=${rulesHasTableKeyword}`
+            `[Horae][TableDebug] onPromptReady rules: mode=${bodyInjection.mode}, skipByBriefScope=${skipByBriefScope}, skipByMarker=${skipSystemPromptInjectionOnce}, subApiScopeBrief=${!!settings.subApiScopeBrief}, rulesLen=${rulesPrompt.length}, hasHoraetableTag=${rulesHasHoraetableTag}, hasTableKeyword=${rulesHasTableKeyword}`
         );
-        if (!skipSystemPromptOnSend && rulesPrompt) {
+        if (rulesPrompt) {
             const rulesPreview = rulesPrompt.length > 600 ? `${rulesPrompt.slice(0, 600)}...` : rulesPrompt;
             console.log(`[Horae][TableDebug] rulesPrompt preview:\n${rulesPreview}`);
         }
         if (skipSystemPromptOnSend) {
             if (skipSystemPromptInjectionOnce) {
-                console.log('[Horae] Internal no-system marker detected, skip system injection prompt for this request');
-            } else {
-                console.log('[Horae] Sub-API brief scope enabled, skipped system injection prompt on send');
+                console.log('[Horae] Internal no-system marker detected, skip main API body injection prompt for this request');
             }
+        } else if (bodyInjection.mode === 'subApiBody') {
+            console.log('[Horae] Sub-API brief scope enabled, replaced main API body injection prompt with sub-API body injection prompt on send');
         }
 
         let antiParaRef = '';

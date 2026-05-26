@@ -1,0 +1,7 @@
+本文の前後には、必ず現在時刻を出力してください。例：
+
+<startTime>xxx</startTime>
+本文
+本文
+本文
+<endTime>xxx</endTime>

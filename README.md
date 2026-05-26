@@ -44,7 +44,7 @@ Long-form RP players know the pain: AI memory is basically a goldfish. Yesterday
 - **Custom Tables** — Excel-style tables with AI auto-fill, row/column locking, undo/redo.
 - **Theme Designer** — Visual theme editor with hue/saturation sliders, image decorations, day/night modes. Export & share themes as JSON.
 - **Interactive Tutorial** — First-time users get a guided walkthrough of all features.
-- **Custom Prompts** — Full control over system injection, batch scan, compression, and RPG prompts. Preset save/load system.
+- **Custom Prompts** — Full control over main API body injection, sub-API body injection, batch scan, compression, and RPG prompts. Preset save/load system.
 - **Config Profiles** — Export all settings as a JSON file. Card authors can share configs for one-click setup.
 
 ---

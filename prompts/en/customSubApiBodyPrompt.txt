@@ -1,0 +1,7 @@
+Before and after the main body, you must output the current time, for example:
+
+<startTime>xxx</startTime>
+Body text
+Body text
+Body text
+<endTime>xxx</endTime>
