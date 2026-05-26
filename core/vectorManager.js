@@ -31,7 +31,9 @@ const QUERY_REWRITE_SNAPSHOT_MAX_ITEMS = 12;
 const QUERY_REWRITE_SNAPSHOT_MAX_AGENDA = 5;
 const QUERY_REWRITE_EVENT_SUMMARY_LIMIT = 5;
 const QUERY_REWRITE_EVENT_SUMMARY_MAX_CHARS = 1000;
-const RERANK_BATCH_MAX_CONCURRENCY = 4;
+const RERANK_BATCH_MAX_CONCURRENCY = 8;
+const RERANK_BATCH_MAX_RETRIES = 2;
+const RERANK_BATCH_RETRY_DELAY_MS = 400;
 const QUERY_REWRITE_REQUEST_DEFAULTS = Object.freeze({
     temperature: 0.1,
     top_p: 0.8,
@@ -1701,7 +1703,7 @@ export class VectorManager {
                         }
                         reranked = [...bestByIndex.values()].sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0));
                     } else {
-                        reranked = await this._rerank(
+                        reranked = await this._rerankWithRetry(
                             rerankQuery,
                             rerankDocs,
                             rerankCandidates.length,
@@ -1747,6 +1749,7 @@ export class VectorManager {
                                 queryTokens: rerankPlan.queryTokens,
                                 batchCount: rerankPlan.batches.length,
                                 batchConcurrency: Math.min(RERANK_BATCH_MAX_CONCURRENCY, rerankPlan.batches.length),
+                                batchMaxRetries: RERANK_BATCH_MAX_RETRIES,
                                 truncatedCount: rerankPlan.truncatedCount,
                                 batches: rerankPlan.batches.map((b, idx) => ({
                                     batch: idx + 1,
@@ -3373,11 +3376,12 @@ export class VectorManager {
 
                 const batch = rerankPlan.batches[bi];
                 console.log(`[Horae Vector] Rerank batch ${bi + 1}/${totalBatches}: docs=${batch.documents.length}, estTokens=${batch.estimatedTokens}`);
-                const batchReranked = await this._rerank(
+                const batchReranked = await this._rerankWithRetry(
                     query,
                     batch.documents,
                     batch.documents.length,
-                    settings
+                    settings,
+                    { batchIndex: bi + 1, totalBatches }
                 );
 
                 for (const rr of batchReranked) {
@@ -3394,6 +3398,36 @@ export class VectorManager {
 
         const mergedGroups = await Promise.all(workers);
         return mergedGroups.flat();
+    }
+
+    async _rerankWithRetry(query, documents, topN, settings, meta = {}) {
+        const maxAttempts = RERANK_BATCH_MAX_RETRIES + 1;
+        const batchLabel = meta.batchIndex && meta.totalBatches
+            ? `batch ${meta.batchIndex}/${meta.totalBatches}`
+            : 'request';
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return await this._rerank(query, documents, topN, settings);
+            } catch (err) {
+                const statusMatch = /Rerank API (\d+):/.exec(err?.message || '');
+                const statusCode = statusMatch ? Number(statusMatch[1]) : null;
+                const retryable = err?.name === 'TypeError'
+                    || statusCode === 408
+                    || statusCode === 409
+                    || statusCode === 425
+                    || statusCode === 429
+                    || (typeof statusCode === 'number' && statusCode >= 500);
+
+                if (!retryable) throw err;
+                if (attempt >= maxAttempts) throw err;
+                const delayMs = RERANK_BATCH_RETRY_DELAY_MS * attempt;
+                console.warn(`[Horae Vector] Rerank ${batchLabel} failed (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms:`, err.message);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+        }
+
+        return [];
     }
 
     /**
