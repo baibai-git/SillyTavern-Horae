@@ -86,12 +86,25 @@ export function createAgendaController(deps) {
         getContext().saveChat();
     }
 
+    function isAgendaTextMatch(leftText, rightText) {
+        const left = String(leftText || '').trim();
+        const right = String(rightText || '').trim();
+        if (!left || !right) return false;
+        return left === right || left.includes(right) || right.includes(left);
+    }
+
+    function isAgendaDeletedByText(text) {
+        const context = getContext();
+        const deletedTexts = context?.chat?.[0]?.horae_meta?._deletedAgendaTexts || [];
+        return deletedTexts.some((deletedText) => isAgendaTextMatch(text, deletedText));
+    }
+
     function getAllAgenda() {
         const all = [];
 
         const userItems = getUserAgenda();
         for (const item of userItems) {
-            if (item._deleted) continue;
+            if (item._deleted || isAgendaDeletedByText(item.text)) continue;
             const sourceMsgIndex = Number.isInteger(item._msgIndex) ? item._msgIndex : null;
             all.push({
                 type: normalizeAgendaTypeSafe(item.type),
@@ -112,7 +125,7 @@ export function createAgendaController(deps) {
                 const meta = context.chat[i].horae_meta;
                 if (meta?.agenda?.length > 0) {
                     for (const item of meta.agenda) {
-                        if (item._deleted) continue;
+                        if (item._deleted || isAgendaDeletedByText(item.text)) continue;
                         const isDupe = all.some(a => a.text === item.text);
                         if (!isDupe) {
                             all.push({

@@ -72,6 +72,31 @@ export function createEmptyMeta() {
     };
 }
 
+function normalizeTableContributions(meta) {
+    if (!meta?.tableContributions) return [];
+    if (Array.isArray(meta.tableContributions)) return meta.tableContributions;
+
+    const raw = meta.tableContributions;
+    const sourceTables = (typeof raw?.name === 'string' && raw?.updates && typeof raw.updates === 'object')
+        ? [raw]
+        : (typeof raw === 'object' ? Object.values(raw) : []);
+
+    const normalized = sourceTables
+        .filter(table => table && typeof table === 'object')
+        .map(table => ({
+            ...table,
+            name: String(table.name || '').trim(),
+        }))
+        .filter(table => table.name && table.updates && typeof table.updates === 'object');
+
+    if (normalized.length > 0) {
+        meta.tableContributions = normalized;
+    } else {
+        delete meta.tableContributions;
+    }
+    return normalized;
+}
+
 /**
  * 提取物品的基本名称（去掉末尾的数量括号）
  * "新鲜牛大骨(5斤)" → "新鲜牛大骨"
@@ -3236,8 +3261,9 @@ class HoraeManager {
         const lastUserEditIdx = new Map();
         for (let i = 0; i < limit; i++) {
             const meta = chat[i]?.horae_meta;
-            if (!meta?.tableContributions) continue;
-            for (const tc of meta.tableContributions) {
+            const tableContributions = normalizeTableContributions(meta);
+            if (tableContributions.length === 0) continue;
+            for (const tc of tableContributions) {
                 if (tc?._isUserEdit) {
                     lastUserEditIdx.set((tc.name || '').trim(), i);
                 }
@@ -3246,8 +3272,9 @@ class HoraeManager {
 
         for (let i = 0; i < limit; i++) {
             const meta = chat[i]?.horae_meta;
-            if (!meta?.tableContributions?.length) continue;
-            const filtered = meta.tableContributions.filter(tc => {
+            const tableContributions = normalizeTableContributions(meta);
+            if (tableContributions.length === 0) continue;
+            const filtered = tableContributions.filter(tc => {
                 if (tc._isUserEdit) return true;
                 const name = (tc.name || '').trim();
                 const ueIdx = lastUserEditIdx.get(name);
@@ -3571,8 +3598,9 @@ class HoraeManager {
         const lastUserEditIdx = new Map();
         for (let i = 0; i < limit; i++) {
             const meta = chat[i]?.horae_meta;
-            if (meta?.tableContributions) {
-                for (const tc of meta.tableContributions) {
+            const tableContributions = normalizeTableContributions(meta);
+            if (tableContributions.length > 0) {
+                for (const tc of tableContributions) {
                     if (tc._isUserEdit) {
                         lastUserEditIdx.set((tc.name || '').trim(), i);
                     }
@@ -3585,18 +3613,18 @@ class HoraeManager {
         let totalApplied = 0;
         for (let i = 0; i < limit; i++) {
             const meta = chat[i]?.horae_meta;
-            if (meta?.tableContributions && meta.tableContributions.length > 0) {
-                const filtered = meta.tableContributions.filter(tc => {
-                    if (tc._isUserEdit) return true;
-                    const name = (tc.name || '').trim();
-                    const ueIdx = lastUserEditIdx.get(name);
-                    if (ueIdx !== undefined && i <= ueIdx) return false;
-                    return true;
-                });
-                if (filtered.length > 0) {
-                    this.applyTableUpdates(filtered);
-                    totalApplied++;
-                }
+            const tableContributions = normalizeTableContributions(meta);
+            if (tableContributions.length === 0) continue;
+            const filtered = tableContributions.filter(tc => {
+                if (tc._isUserEdit) return true;
+                const name = (tc.name || '').trim();
+                const ueIdx = lastUserEditIdx.get(name);
+                if (ueIdx !== undefined && i <= ueIdx) return false;
+                return true;
+            });
+            if (filtered.length > 0) {
+                this.applyTableUpdates(filtered);
+                totalApplied++;
             }
         }
 
@@ -3667,14 +3695,32 @@ class HoraeManager {
                         if (match) match._compressedBy = flag._compressedBy;
                     }
                     for (const sEvt of summaryEvts) {
-                        if (!sEvt._summaryId) continue;
-                        const exists = meta.events.some(e => e._summaryId === sEvt._summaryId);
-                        if (!exists) {
+                        if (sEvt._summaryId) {
+                            const exists = meta.events.some(e => e._summaryId === sEvt._summaryId);
+                            if (!exists) {
+                                meta.events.push({
+                                    summary: sEvt.summary,
+                                    level: sEvt.level || '摘要',
+                                    isSummary: true,
+                                    _summaryId: sEvt._summaryId,
+                                });
+                            }
+                            continue;
+                        }
+                        if (!sEvt._carryoverSeed) continue;
+                        const match = meta.events.find(e =>
+                            (e.isSummary || e.level === '摘要') &&
+                            e.summary && sEvt.summary &&
+                            e.summary === sEvt.summary
+                        );
+                        if (match) {
+                            match._carryoverSeed = true;
+                        } else {
                             meta.events.push({
                                 summary: sEvt.summary,
                                 level: sEvt.level || '摘要',
                                 isSummary: true,
-                                _summaryId: sEvt._summaryId,
+                                _carryoverSeed: true,
                             });
                         }
                     }

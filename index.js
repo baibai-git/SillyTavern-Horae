@@ -1383,12 +1383,9 @@ function importTable(file) {
                     for (let i = 0; i < chat.length; i++) {
                         const meta = chat[i]?.horae_meta;
                         if (meta?.tableContributions) {
-                            meta.tableContributions = meta.tableContributions.filter(
+                            _filterMessageTableContributions(meta,
                                 tc => (tc.name || '').trim() !== importName
                             );
-                            if (meta.tableContributions.length === 0) {
-                                delete meta.tableContributions;
-                            }
                         }
                     }
                 }
@@ -5330,12 +5327,9 @@ function deleteCustomTable(index, scope = 'local') {
         for (let i = 0; i < chat.length; i++) {
             const meta = chat[i]?.horae_meta;
             if (meta?.tableContributions) {
-                meta.tableContributions = meta.tableContributions.filter(
+                _filterMessageTableContributions(meta,
                     tc => (tc.name || '').trim() !== deletedName
                 );
-                if (meta.tableContributions.length === 0) {
-                    delete meta.tableContributions;
-                }
             }
         }
     }
@@ -5368,12 +5362,9 @@ function purgeTableContributions(tableName, scope = 'local') {
     for (let i = 0; i < chat.length; i++) {
         const meta = chat[i]?.horae_meta;
         if (meta?.tableContributions) {
-            meta.tableContributions = meta.tableContributions.filter(
+            _filterMessageTableContributions(meta,
                 tc => (tc.name || '').trim() !== tableName
             );
-            if (meta.tableContributions.length === 0) {
-                delete meta.tableContributions;
-            }
         }
     }
 
@@ -5437,12 +5428,9 @@ function clearTableData(index, scope = 'local') {
         for (let i = 0; i < chat.length; i++) {
             const meta = chat[i]?.horae_meta;
             if (meta?.tableContributions) {
-                meta.tableContributions = meta.tableContributions.filter(
+                _filterMessageTableContributions(meta,
                     tc => (tc.name || '').trim() !== tableName
                 );
-                if (meta.tableContributions.length === 0) {
-                    delete meta.tableContributions;
-                }
             }
         }
     }
@@ -11091,12 +11079,35 @@ function _rebuildDerivedMetaCaches() {
     horaeManager.rebuildRpgData();
 }
 
+function _setNormalizedMessageTableContributions(meta, tables) {
+    if (!meta) return [];
+    const normalized = _normalizeMessageTableContributions(tables);
+    if (normalized.length > 0) {
+        meta.tableContributions = normalized;
+        return normalized;
+    }
+    delete meta.tableContributions;
+    return [];
+}
+
+function _filterMessageTableContributions(meta, predicate) {
+    if (!meta?.tableContributions) return [];
+    const filtered = _normalizeMessageTableContributions(meta.tableContributions).filter(predicate);
+    if (filtered.length > 0) {
+        meta.tableContributions = filtered;
+        return filtered;
+    }
+    delete meta.tableContributions;
+    return [];
+}
+
 function _materializeMessageTableContributions(meta) {
-    if (Array.isArray(meta?.tableContributions)) {
-        meta.tableContributions = _normalizeMessageTableContributions(meta.tableContributions);
+    if (!meta) return meta;
+    if (meta.tableContributions !== undefined) {
+        _setNormalizedMessageTableContributions(meta, meta.tableContributions);
     }
     if (!meta?._tableUpdates) return meta;
-    meta.tableContributions = _normalizeMessageTableContributions(meta._tableUpdates);
+    _setNormalizedMessageTableContributions(meta, meta._tableUpdates);
     delete meta._tableUpdates;
     return meta;
 }
@@ -11906,11 +11917,21 @@ function buildHoraeEventTagFromMeta(meta) {
 }
 
 function _normalizeMessageTableContributions(tables) {
-    if (!Array.isArray(tables) || tables.length === 0) return [];
+    let sourceTables = [];
+    if (Array.isArray(tables)) {
+        sourceTables = tables;
+    } else if (tables && typeof tables === 'object') {
+        if (typeof tables.name === 'string' && tables.updates && typeof tables.updates === 'object') {
+            sourceTables = [tables];
+        } else {
+            sourceTables = Object.values(tables);
+        }
+    }
+    if (sourceTables.length === 0) return [];
 
     const merged = [];
     const byName = new Map();
-    for (const table of tables) {
+    for (const table of sourceTables) {
         const tableName = String(table?.name || '').trim();
         const updates = table?.updates;
         if (!tableName || !updates || typeof updates !== 'object') continue;
@@ -18325,6 +18346,25 @@ function _isAgendaTextMatch(leftText, rightText) {
     return left === right || left.includes(right) || right.includes(left);
 }
 
+function _isAgendaDeletedByTexts(agendaText, deletedTexts) {
+    const text = String(agendaText || '').trim();
+    if (!text || !Array.isArray(deletedTexts) || deletedTexts.length === 0) return false;
+    return deletedTexts.some((deletedText) => _isAgendaTextMatch(text, deletedText));
+}
+
+function _collectDeletedAgendaTextsFromMetas(metas) {
+    const collected = [];
+    for (const meta of metas || []) {
+        if (!Array.isArray(meta?._deletedAgendaTexts)) continue;
+        for (const rawText of meta._deletedAgendaTexts) {
+            const text = String(rawText || '').trim();
+            if (!text || collected.includes(text)) continue;
+            collected.push(text);
+        }
+    }
+    return collected;
+}
+
 function _removeAgendaItemsByText(agendaItems, deletedText) {
     const normalized = String(deletedText || '').trim();
     if (!normalized) return;
@@ -18340,10 +18380,12 @@ function _collectCarryoverAgendaSeed(chat, endExclusive) {
 
     const agendaItems = [];
     const agendaEnd = Math.max(0, Math.min(chat.length, endExclusive));
+    const deletedAgendaTexts = _collectDeletedAgendaTextsFromMetas([chat[0]?.horae_meta]);
 
     const pushAgenda = (rawItem, fallbackSource = 'ai') => {
         const text = String(rawItem?.text || '').trim();
         if (!text || rawItem?._deleted || rawItem?.done) return;
+        if (_isAgendaDeletedByTexts(text, deletedAgendaTexts)) return;
 
         const nextItem = {
             type: horaeManager.normalizeAgendaType(rawItem?.type),
@@ -18410,6 +18452,7 @@ function _buildCarryoverStateSeedMeta(chat, endExclusive) {
     seedMeta.npcs = _deepCloneData(latestState?.npcs || {});
     seedMeta.mood = _deepCloneData(latestState?.mood || {});
     seedMeta.agenda = _collectCarryoverAgendaSeed(chat, cutoff);
+    seedMeta._deletedAgendaTexts = _deepCloneData(_collectDeletedAgendaTextsFromMetas([chat?.[0]?.horae_meta]));
     seedMeta.deletedItems = [];
     seedMeta.deletedAgenda = [];
 
@@ -18434,6 +18477,11 @@ function _applyCarryoverStateSeed(targetMeta, seedMeta) {
     target.npcs = _deepCloneData(seed.npcs || {});
     target.agenda = _deepCloneData(seed.agenda || []);
     target.deletedAgenda = [];
+    if (Array.isArray(seed?._deletedAgendaTexts) && seed._deletedAgendaTexts.length > 0) {
+        target._deletedAgendaTexts = _deepCloneData(seed._deletedAgendaTexts);
+    } else {
+        delete target._deletedAgendaTexts;
+    }
     target.mood = _deepCloneData(seed.mood || {});
 
     return target;
@@ -18550,7 +18598,6 @@ async function createNewChatWithCarryover() {
         }
 
         _applyCarryoverStateSeed(targetChat[0].horae_meta, carrySeedMeta);
-        targetChat[0].mes = buildHoraeTagFromMeta(carrySeedMeta);
 
         if (!targetChat[0].horae_meta) targetChat[0].horae_meta = createEmptyMeta();
         if (!Array.isArray(targetChat[0].horae_meta.events)) targetChat[0].horae_meta.events = [];
@@ -18565,6 +18612,11 @@ async function createNewChatWithCarryover() {
                 _carryoverSeed: true,
             });
         }
+
+        // #0 作为承接锚点时，正文必须同步写入 <horae>/<horaeevent> 标签，
+        // 否则后续从正文重扫会把仅存在于内存 meta 的承接摘要丢掉。
+        targetChat[0].mes = '';
+        injectHoraeTagToMessage(0, targetChat[0].horae_meta);
 
         for (const msg of carryMessages) {
             targetChat.push(msg);
@@ -18808,11 +18860,17 @@ function _importAsInitialState(importObj, chat, options = {}) {
     }
 
     // 自定义表格
+    const importedTableContributions = [];
     for (const meta of allMetas) {
-        if (meta.tableContributions) {
-            if (!target.tableContributions) target.tableContributions = {};
-            Object.assign(target.tableContributions, meta.tableContributions);
+        const contributions = _normalizeMessageTableContributions(meta?.tableContributions);
+        if (contributions.length > 0) {
+            importedTableContributions.push(...contributions.map(tc => _deepCloneData(tc)));
         }
+    }
+    if (importedTableContributions.length > 0) {
+        target.tableContributions = importedTableContributions;
+    } else {
+        delete target.tableContributions;
     }
 
     // 场景记忆
@@ -18823,18 +18881,30 @@ function _importAsInitialState(importObj, chat, options = {}) {
         }
     }
 
+    const importedDeletedAgendaTexts = _collectDeletedAgendaTextsFromMetas(allMetas);
+    if (importedDeletedAgendaTexts.length > 0) {
+        target._deletedAgendaTexts = _deepCloneData(importedDeletedAgendaTexts);
+    } else {
+        delete target._deletedAgendaTexts;
+    }
+
     // 悬念簿
     const seenAgenda = new Set();
     for (const meta of allMetas) {
         if (meta.agenda?.length) {
             if (!target.agenda) target.agenda = [];
             for (const item of meta.agenda) {
-                if (!seenAgenda.has(item.text)) {
+                const text = String(item?.text || '').trim();
+                if (!text || item?._deleted || _isAgendaDeletedByTexts(text, importedDeletedAgendaTexts)) continue;
+                if (!seenAgenda.has(text)) {
                     target.agenda.push({ ...item, type: horaeManager.normalizeAgendaType(item.type) });
-                    seenAgenda.add(item.text);
+                    seenAgenda.add(text);
                 }
             }
         }
+    }
+    if (target.agenda?.length && importedDeletedAgendaTexts.length > 0) {
+        target.agenda = target.agenda.filter(item => !_isAgendaDeletedByTexts(item?.text, importedDeletedAgendaTexts));
     }
 
     // 处理已删除物品
