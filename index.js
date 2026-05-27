@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki，柏柏
- * 版本: 1.14.6B
+ * 版本: 1.14.7B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -17,7 +17,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.6B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.7B';
 
 // ============================================
 // 常量定义
@@ -25,7 +25,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.14.6B';
+const VERSION = '1.14.7B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -4538,12 +4538,29 @@ function openEventEditModal(messageId, eventIndex = 0) {
             // 更新或添加事件
             const isSummaryLevel = newLevel === '摘要';
             if (chatMeta.events[eventIndex]) {
-                chatMeta.events[eventIndex] = {
+                const prevEvent = chatMeta.events[eventIndex] || {};
+                const nextEvent = {
+                    ...prevEvent,
                     is_important: newLevel === '重要' || newLevel === '关键' || newLevel === '關鍵',
                     level: newLevel,
                     summary: newSummary,
-                    ...(isSummaryLevel ? { isSummary: true } : {})
                 };
+
+                if (isSummaryLevel) {
+                    nextEvent.isSummary = true;
+                    // 保留摘要身份标记，避免“承接旧对话剧情回顾”等种子摘要在后续重建中丢失。
+                    if (prevEvent._summaryId) nextEvent._summaryId = prevEvent._summaryId;
+                    if (prevEvent._carryoverSeed) nextEvent._carryoverSeed = true;
+                    if (prevEvent._restored) nextEvent._restored = true;
+                    delete nextEvent._compressedBy;
+                } else {
+                    delete nextEvent.isSummary;
+                    delete nextEvent._summaryId;
+                    delete nextEvent._carryoverSeed;
+                    delete nextEvent._restored;
+                }
+
+                chatMeta.events[eventIndex] = nextEvent;
             } else {
                 chatMeta.events.push({
                     is_important: newLevel === '重要' || newLevel === '关键' || newLevel === '關鍵',
@@ -11972,16 +11989,46 @@ function buildHoraeTagFromMeta(meta) {
 }
 
 /** 构建 <horaeevent> 标签字符串 */
+function isSummaryMetaEvent(event) {
+    return !!(event && (
+        event.isSummary
+        || event._summaryId
+        || event._carryoverSeed
+        || event.level === '摘要'
+    ));
+}
+
+function messageMetaHasSummaryEvent(meta) {
+    const events = meta?.events || (meta?.event ? [meta.event] : []);
+    return Array.isArray(events) && events.some(isSummaryMetaEvent);
+}
+
 function buildHoraeEventTagFromMeta(meta) {
     const events = meta.events || (meta.event ? [meta.event] : []);
     if (events.length === 0) return '';
 
     const lines = events
-        .filter(e => e.summary)
+        .filter(e => e.summary && !isSummaryMetaEvent(e))
         .map(e => `event:${e.level || '一般'}|${e.summary}`);
 
     if (lines.length === 0) return '';
     return `<horaeevent>\n${lines.join('\n')}\n</horaeevent>`;
+}
+
+function stripSummaryEventsFromMessageBodies(chat) {
+    if (!Array.isArray(chat) || chat.length === 0) return 0;
+
+    let rewritten = 0;
+    for (let i = 0; i < chat.length; i++) {
+        const msg = chat[i];
+        const meta = msg?.horae_meta;
+        if (!msg || !meta || !messageMetaHasSummaryEvent(meta)) continue;
+
+        const before = typeof msg.mes === 'string' ? msg.mes : '';
+        injectHoraeTagToMessage(i, meta);
+        if (msg.mes !== before) rewritten++;
+    }
+    return rewritten;
 }
 
 function _normalizeMessageTableContributions(tables) {
@@ -18681,8 +18728,8 @@ async function createNewChatWithCarryover() {
             });
         }
 
-        // #0 作为承接锚点时，正文必须同步写入 <horae>/<horaeevent> 标签，
-        // 否则后续从正文重扫会把仅存在于内存 meta 的承接摘要丢掉。
+        // #0 作为承接锚点时，仍同步写入 <horae> 等普通标签；
+        // 但摘要事件只保留在 meta 中，不再写回 <horaeevent>。
         targetChat[0].mes = '';
         injectHoraeTagToMessage(0, targetChat[0].horae_meta);
 
@@ -20711,6 +20758,7 @@ async function onChatChanged() {
     try {
         clearTableHistory();
         horaeManager.init(getContext(), settings);
+        let summaryBodiesStripped = 0;
 
         // ── 迁移旧数据：将 rpg 内嵌 config 提升到 _rpgConfigs 顶层键 ──
         const _mc = horaeManager.getChat();
@@ -20764,6 +20812,16 @@ async function onChatChanged() {
             }
         } catch (e) {
             console.warn('[Horae] 摘要迁移失败：', e);
+        }
+
+        try {
+            summaryBodiesStripped = stripSummaryEventsFromMessageBodies(_mc);
+            if (summaryBodiesStripped > 0) {
+                console.log(`[Horae] 已从 ${summaryBodiesStripped} 条消息正文中剥离摘要事件标签`);
+                await getContext().saveChat();
+            }
+        } catch (e) {
+            console.warn('[Horae] 摘要正文清理失败：', e);
         }
 
         _rebuildGlobalDataForCurrentChat();

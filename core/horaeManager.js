@@ -114,6 +114,37 @@ function isAgendaDeletedByTexts(agendaText, deletedTexts) {
     return candidates.some((deletedText) => isAgendaTextMatch(text, deletedText));
 }
 
+function normalizeHoraeEventLevel(levelRaw) {
+    const raw = String(levelRaw || '').trim();
+    const lower = raw.toLowerCase();
+
+    if (raw === '关键' || raw === '關鍵' || lower === 'critical') {
+        return '关键';
+    }
+    if (raw === '重要' || lower === 'important') {
+        return '重要';
+    }
+    if (raw === '摘要' || lower === 'summary') {
+        return '摘要';
+    }
+    return '一般';
+}
+
+function parseHoraeInlineEvent(eventStr) {
+    const parts = String(eventStr || '').split('|');
+    if (parts.length < 2) return null;
+
+    const level = normalizeHoraeEventLevel(parts[0]);
+    const summary = parts.slice(1).join('|').trim();
+    if (!summary || level === '摘要') return null;
+
+    return {
+        is_important: level === '重要' || level === '关键',
+        level,
+        summary,
+    };
+}
+
 /**
  * 提取物品的基本名称（去掉末尾的数量括号）
  * "新鲜牛大骨(5斤)" → "新鲜牛大骨"
@@ -1665,25 +1696,8 @@ class HoraeManager {
             }
             // event:重要|爱丽丝坦白了秘密
             else if (trimmedLine.startsWith('event:')) {
-                const eventStr = trimmedLine.substring(6).trim();
-                const parts = eventStr.split('|');
-                if (parts.length >= 2) {
-                    const levelRaw = parts[0].trim();
-                    const summary = parts.slice(1).join('|').trim();
-
-                    let level = '一般';
-                    if (levelRaw === '关键' || levelRaw === '關鍵' || levelRaw.toLowerCase() === 'critical') {
-                        level = '关键';
-                    } else if (levelRaw === '重要' || levelRaw.toLowerCase() === 'important') {
-                        level = '重要';
-                    }
-
-                    result.events.push({
-                        is_important: level === '重要' || level === '关键',
-                        level: level,
-                        summary: summary
-                    });
-                }
+                const parsedEvent = parseHoraeInlineEvent(trimmedLine.substring(6).trim());
+                if (parsedEvent) result.events.push(parsedEvent);
             }
             // affection:鲍勃=65 或 affection:鲍勃+5（兼容新旧格式）
             // 容忍AI附加注解如 affection:汤姆=18(+0)|观察到xxx，只提取名字和数值
@@ -4816,24 +4830,9 @@ RPG 모드가 켜져 있으면 최종 출력은 반드시 세 개의 태그로 �
 
         // event
         while ((match = patterns.event.exec(message)) !== null) {
-            const eventStr = match[1].trim();
-            const parts = eventStr.split('|');
-            if (parts.length >= 2) {
-                const levelRaw = parts[0].trim();
-                const summary = parts.slice(1).join('|').trim();
-
-                let level = '一般';
-                if (levelRaw === '关键' || levelRaw === '關鍵' || levelRaw.toLowerCase() === 'critical') {
-                    level = '关键';
-                } else if (levelRaw === '重要' || levelRaw.toLowerCase() === 'important') {
-                    level = '重要';
-                }
-
-                result.events.push({
-                    is_important: level === '重要' || level === '关键',
-                    level: level,
-                    summary: summary
-                });
+            const parsedEvent = parseHoraeInlineEvent(match[1].trim());
+            if (parsedEvent) {
+                result.events.push(parsedEvent);
                 hasAnyData = true;
             }
         }
