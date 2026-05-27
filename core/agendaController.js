@@ -8,6 +8,8 @@ export function createAgendaController(deps) {
         showToast,
         closeEditModal,
         preventModalBubble,
+        commitAgendaMeta,
+        refreshAgendaDisplays,
     } = deps;
 
     let agendaMultiSelectMode = false;
@@ -74,23 +76,109 @@ export function createAgendaController(deps) {
         return [];
     }
 
-    function setUserAgenda(agenda) {
+    function ensureAgendaMeta(messageId) {
         const context = getContext();
-        if (!context?.chat?.length) return;
+        if (!context?.chat?.[messageId]) return null;
 
-        if (!context.chat[0].horae_meta) {
-            context.chat[0].horae_meta = createEmptyMeta();
+        if (!context.chat[messageId].horae_meta) {
+            context.chat[messageId].horae_meta = createEmptyMeta();
+        }
+        return context.chat[messageId].horae_meta;
+    }
+
+    function commitAgendaMessageMeta(messageId, meta) {
+        if (!Number.isInteger(messageId) || messageId < 0 || !meta) return;
+
+        if (typeof commitAgendaMeta === 'function') {
+            commitAgendaMeta(messageId, meta);
+            return;
         }
 
-        context.chat[0].horae_meta.agenda = agenda;
-        getContext().saveChat();
+        const context = getContext();
+        if (!context?.chat?.[messageId]) return;
+        context.chat[messageId].horae_meta = meta;
+    }
+
+    function commitChangedAgendaMessages(messageIds) {
+        const context = getContext();
+        if (!context?.chat) return [];
+
+        const uniqueIds = [...new Set((messageIds || []).filter((id) => Number.isInteger(id) && id >= 0))];
+        for (const messageId of uniqueIds) {
+            const meta = context.chat[messageId]?.horae_meta;
+            if (meta) commitAgendaMessageMeta(messageId, meta);
+        }
+        return uniqueIds;
+    }
+
+    function refreshAgendaUi() {
+        if (typeof refreshAgendaDisplays === 'function') {
+            refreshAgendaDisplays();
+            return;
+        }
+        updateAgendaDisplay();
+    }
+
+    function setUserAgenda(agenda, options = {}) {
+        const context = getContext();
+        if (!context?.chat?.length) return null;
+        const { save = true } = options;
+
+        const meta = ensureAgendaMeta(0);
+        if (!meta) return null;
+
+        meta.agenda = agenda;
+        commitAgendaMessageMeta(0, meta);
+
+        if (save) {
+            getContext().saveChat();
+        }
+        return meta;
+    }
+
+    function normalizeAgendaText(text) {
+        return String(text || '').trim();
+    }
+
+    function isExactAgendaTextMatch(leftText, rightText) {
+        const left = normalizeAgendaText(leftText);
+        const right = normalizeAgendaText(rightText);
+        if (!left || !right) return false;
+        return left === right;
     }
 
     function isAgendaTextMatch(leftText, rightText) {
-        const left = String(leftText || '').trim();
-        const right = String(rightText || '').trim();
+        const left = normalizeAgendaText(leftText);
+        const right = normalizeAgendaText(rightText);
         if (!left || !right) return false;
         return left === right || left.includes(right) || right.includes(left);
+    }
+
+    function removeAgendaItemsByExactText(agenda, targetText) {
+        if (!Array.isArray(agenda)) return false;
+
+        let changed = false;
+        for (let i = agenda.length - 1; i >= 0; i--) {
+            if (!isExactAgendaTextMatch(agenda[i]?.text, targetText)) continue;
+            agenda.splice(i, 1);
+            changed = true;
+        }
+        return changed;
+    }
+
+    function updateAgendaItemsByExactText(agenda, targetText, nextItem) {
+        if (!Array.isArray(agenda)) return false;
+
+        let changed = false;
+        for (const item of agenda) {
+            if (!isExactAgendaTextMatch(item?.text, targetText)) continue;
+            item.type = nextItem.type;
+            item.text = nextItem.text;
+            item.date = nextItem.date;
+            item.done = !!nextItem.done;
+            changed = true;
+        }
+        return changed;
     }
 
     function isAgendaDeletedByText(text) {
@@ -173,29 +261,25 @@ export function createAgendaController(deps) {
 
     function deleteAgendaItem(agendaItem) {
         const context = getContext();
-        if (!context?.chat) return;
-        const targetText = agendaItem.text;
+        if (!context?.chat) return [];
+        const targetText = normalizeAgendaText(agendaItem?.text);
+        if (!targetText) return [];
 
-        if (context.chat[0]?.horae_meta?.agenda) {
-            for (const a of context.chat[0].horae_meta.agenda) {
-                if (a.text === targetText) a._deleted = true;
-            }
+        const changedMessageIds = [];
+        const userMeta = ensureAgendaMeta(0);
+        if (removeAgendaItemsByExactText(userMeta?.agenda, targetText)) {
+            changedMessageIds.push(0);
         }
+
         for (let i = 1; i < context.chat.length; i++) {
             const meta = context.chat[i]?.horae_meta;
-            if (meta?.agenda?.length > 0) {
-                for (const a of meta.agenda) {
-                    if (a.text === targetText) a._deleted = true;
-                }
+            if (removeAgendaItemsByExactText(meta?.agenda, targetText)) {
+                changedMessageIds.push(i);
             }
         }
 
-        if (!context.chat[0].horae_meta) context.chat[0].horae_meta = createEmptyMeta();
-        if (!context.chat[0].horae_meta._deletedAgendaTexts) context.chat[0].horae_meta._deletedAgendaTexts = [];
-        if (!context.chat[0].horae_meta._deletedAgendaTexts.includes(targetText)) {
-            context.chat[0].horae_meta._deletedAgendaTexts.push(targetText);
-        }
-        getContext().saveChat();
+        commitChangedAgendaMessages(changedMessageIds);
+        return changedMessageIds;
     }
 
     function renderAgendaItem(item, index) {
@@ -412,6 +496,7 @@ export function createAgendaController(deps) {
         showToast(t('toast.saveSuccess'), 'success');
 
         exitAgendaMultiSelect();
+        refreshAgendaUi();
     }
 
     function openAgendaEditModal(agendaItem = null) {
@@ -475,7 +560,7 @@ export function createAgendaController(deps) {
             if (e.target.id === 'horae-edit-modal') closeEditModal();
         });
 
-        document.getElementById('agenda-modal-save').addEventListener('click', (e) => {
+        document.getElementById('agenda-modal-save').addEventListener('click', async (e) => {
             e.stopPropagation();
             e.stopImmediatePropagation();
             const type = normalizeAgendaTypeSafe(document.getElementById('agenda-edit-type')?.value || currentType);
@@ -490,24 +575,17 @@ export function createAgendaController(deps) {
                 const context = getContext();
                 if (agendaItem._store === 'user') {
                     const agenda = getUserAgenda();
-                    const found = agenda.find(a => a.text === agendaItem.text);
-                    if (found) {
-                        found.type = type;
-                        found.text = text;
-                        found.date = date;
-                    }
-                    setUserAgenda(agenda);
+                    updateAgendaItemsByExactText(agenda, agendaItem.text, { type, text, date, done: false });
+                    setUserAgenda(agenda, { save: false });
                 } else if (agendaItem._store === 'msg' && context?.chat) {
-                    const msg = context.chat[agendaItem._msgIndex];
-                    if (msg?.horae_meta?.agenda) {
-                        const found = msg.horae_meta.agenda.find(a => a.text === agendaItem.text);
-                        if (found) {
-                            found.type = type;
-                            found.text = text;
-                            found.date = date;
+                    const changedMessageIds = [];
+                    for (let i = 1; i < context.chat.length; i++) {
+                        const msg = context.chat[i];
+                        if (updateAgendaItemsByExactText(msg?.horae_meta?.agenda, agendaItem.text, { type, text, date, done: false })) {
+                            changedMessageIds.push(i);
                         }
-                        getContext().saveChat();
                     }
+                    commitChangedAgendaMessages(changedMessageIds);
                 }
             } else {
                 const agenda = getUserAgenda();
@@ -523,11 +601,12 @@ export function createAgendaController(deps) {
                     createdAt: Date.now(),
                     ...(sourceMsgIndex !== null ? { _msgIndex: sourceMsgIndex } : {}),
                 });
-                setUserAgenda(agenda);
+                setUserAgenda(agenda, { save: false });
             }
 
+            await getContext().saveChat();
             closeEditModal();
-            updateAgendaDisplay();
+            refreshAgendaUi();
             showToast(t('toast.saveSuccess'), 'success');
         });
 
@@ -539,15 +618,16 @@ export function createAgendaController(deps) {
 
         const deleteEl = document.getElementById('agenda-modal-delete');
         if (deleteEl && isEdit) {
-            deleteEl.addEventListener('click', (e) => {
+            deleteEl.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 e.stopImmediatePropagation();
 
                 if (!confirm(t('confirm.deleteAgenda', { n: 1 }))) return;
 
                 deleteAgendaItem(agendaItem);
+                await getContext().saveChat();
                 closeEditModal();
-                updateAgendaDisplay();
+                refreshAgendaUi();
                 showToast(t('toast.saveSuccess'), 'info');
             });
         }

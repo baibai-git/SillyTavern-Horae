@@ -97,6 +97,23 @@ function normalizeTableContributions(meta) {
     return normalized;
 }
 
+function isAgendaTextMatch(leftText, rightText) {
+    const left = String(leftText || '').trim();
+    const right = String(rightText || '').trim();
+    if (!left || !right) return false;
+    return left === right || left.includes(right) || right.includes(left);
+}
+
+function isAgendaDeletedByTexts(agendaText, deletedTexts) {
+    const text = String(agendaText || '').trim();
+    if (!text || !deletedTexts) return false;
+
+    const candidates = Array.isArray(deletedTexts)
+        ? deletedTexts
+        : Array.from(deletedTexts);
+    return candidates.some((deletedText) => isAgendaTextMatch(text, deletedText));
+}
+
 /**
  * 提取物品的基本名称（去掉末尾的数量括号）
  * "新鲜牛大骨(5斤)" → "新鲜牛大骨"
@@ -846,7 +863,7 @@ class HoraeManager {
         const deletedTexts = new Set(chatForAgenda?.[0]?.horae_meta?._deletedAgendaTexts || []);
         const userAgenda = chatForAgenda?.[0]?.horae_meta?.agenda || [];
         for (const item of userAgenda) {
-            if (item._deleted || deletedTexts.has(item.text)) continue;
+            if (item._deleted || isAgendaDeletedByTexts(item.text, deletedTexts)) continue;
             if (!seenTexts.has(item.text)) {
                 allAgendaItems.push(item);
                 seenTexts.add(item.text);
@@ -859,7 +876,7 @@ class HoraeManager {
                 const msgAgenda = chatForAgenda[i].horae_meta?.agenda;
                 if (msgAgenda?.length > 0) {
                     for (const item of msgAgenda) {
-                        if (item._deleted || deletedTexts.has(item.text)) continue;
+                        if (item._deleted || isAgendaDeletedByTexts(item.text, deletedTexts)) continue;
                         if (!seenTexts.has(item.text)) {
                             allAgendaItems.push(item);
                             seenTexts.add(item.text);
@@ -1874,8 +1891,8 @@ class HoraeManager {
             const deletedSet = new Set(chat0?.horae_meta?._deletedAgendaTexts || []);
             const localDeletedSet = new Set(parsed.deletedAgenda || []);
             for (const item of parsed.agenda) {
-                if (deletedSet.has(item.text)) continue;
-                if (localDeletedSet.has(item.text)) continue;
+                if (isAgendaDeletedByTexts(item.text, deletedSet)) continue;
+                if (isAgendaDeletedByTexts(item.text, localDeletedSet)) continue;
                 const normalizedItem = {
                     ...item,
                     type: this.normalizeAgendaType(item.type),
@@ -2911,24 +2928,16 @@ class HoraeManager {
         const chat = this.getChat();
         if (!chat || deletedTexts.length === 0) return;
 
-        const isMatch = (agendaText, deleteText) => {
-            if (!agendaText || !deleteText) return false;
-            // 精确匹配 或 互相包含（允许AI缩写/扩写）
-            return agendaText === deleteText ||
-                agendaText.includes(deleteText) ||
-                deleteText.includes(agendaText);
-        };
-
         if (chat[0]?.horae_meta?.agenda) {
             chat[0].horae_meta.agenda = chat[0].horae_meta.agenda.filter(
-                a => !deletedTexts.some(dt => isMatch(a.text, dt))
+                a => !isAgendaDeletedByTexts(a.text, deletedTexts)
             );
         }
 
         for (let i = 1; i < chat.length; i++) {
             if (chat[i]?.horae_meta?.agenda?.length > 0) {
                 chat[i].horae_meta.agenda = chat[i].horae_meta.agenda.filter(
-                    a => !deletedTexts.some(dt => isMatch(a.text, dt))
+                    a => !isAgendaDeletedByTexts(a.text, deletedTexts)
                 );
             }
         }

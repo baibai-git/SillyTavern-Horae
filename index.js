@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki，柏柏
- * 版本: 1.14.5B
+ * 版本: 1.14.6B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -17,7 +17,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.5B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.6B';
 
 // ============================================
 // 常量定义
@@ -25,7 +25,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.14.5B';
+const VERSION = '1.14.6B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -350,6 +350,8 @@ const agendaController = createAgendaController({
     showToast,
     closeEditModal,
     preventModalBubble,
+    commitAgendaMeta: (messageId, meta) => _commitMessageMetaAndRebuild(messageId, meta),
+    refreshAgendaDisplays: () => refreshAllDisplays(),
 });
 
 // ============================================
@@ -1902,6 +1904,7 @@ function _pickPreferredSummaryOwner(prev, next) {
 async function _removeSummaryAndRestoreHierarchy(chat, summaryId) {
     if (!chat?.length || !summaryId) return { removedEntry: null, restoredChildren: [] };
     const firstMeta = chat?.[0]?.horae_meta;
+    const changedMessageIds = new Set();
 
     let removedEntry = null;
     if (Array.isArray(firstMeta?.autoSummaries)) {
@@ -1941,14 +1944,26 @@ async function _removeSummaryAndRestoreHierarchy(chat, summaryId) {
         const meta = chat[i]?.horae_meta;
         if (!Array.isArray(meta?.events)) continue;
 
+        let changed = false;
+        const beforeLength = meta.events.length;
         meta.events = meta.events.filter(evt => evt?._summaryId !== summaryId);
+        if (meta.events.length !== beforeLength) changed = true;
 
         const msgOwner = childOwnerByMsg.get(i);
         for (const evt of meta.events) {
             if (!evt || evt._compressedBy !== summaryId) continue;
-            if (msgOwner?.id) evt._compressedBy = msgOwner.id;
-            else delete evt._compressedBy;
+            if (msgOwner?.id) {
+                if (evt._compressedBy !== msgOwner.id) {
+                    evt._compressedBy = msgOwner.id;
+                    changed = true;
+                }
+            } else {
+                delete evt._compressedBy;
+                changed = true;
+            }
         }
+
+        if (changed) changedMessageIds.add(i);
     }
 
     if (restoredChildren.length > 0) {
@@ -1980,7 +1995,7 @@ async function _removeSummaryAndRestoreHierarchy(chat, summaryId) {
         }
     }
 
-    return { removedEntry, restoredChildren };
+    return { removedEntry, restoredChildren, changedMessageIds: [...changedMessageIds] };
 }
 
 /** 切换摘要的 active 状态（摘要视图 ↔ 原始时间线） */
@@ -2005,10 +2020,10 @@ async function deleteSummary(summaryId) {
     if (!confirm(t('confirm.deleteSummary'))) return;
 
     const chat = horaeManager.getChat();
-    await _removeSummaryAndRestoreHierarchy(chat, summaryId);
+    const result = await _removeSummaryAndRestoreHierarchy(chat, summaryId);
 
+    _commitModifiedMessageMetas(result?.changedMessageIds, { refresh: true });
     await getContext().saveChat();
-    updateTimelineDisplay();
     showToast(t('toast.saveSuccess'), 'success');
 }
 
@@ -2064,12 +2079,9 @@ function openSummaryEditModal(summaryId, messageId, eventIndex) {
         // autoSummaries.summaryText 是真源，永远写入；events 卡片是投影，存在则同步
         if (summaryEntry) summaryEntry.summaryText = newText;
         evt.summary = newText;
-        if (typeof messageId === 'number' && messageId > 0) {
-            try { injectHoraeTagToMessage(messageId, meta); } catch (e2) { /* ignore */ }
-        }
+        _commitModifiedMessageMetas([messageId], { refresh: true });
         await getContext().saveChat();
         closeEditModal();
-        updateTimelineDisplay();
         showToast(t('toast.saveSuccess'), 'success');
     });
 
@@ -2208,15 +2220,26 @@ async function handleTimelineContextAction(action, msgIdx, evtIdx, eventKey) {
         if (!confirm(t('confirm.deleteTimeline', { n: 1 }))) return;
         const meta = chat[msgIdx]?.horae_meta;
         if (!meta) return;
+        const changedMessageIds = [msgIdx];
+        const deletedSummaryIds = new Set();
         if (meta.events && evtIdx < meta.events.length) {
+            const evt = meta.events[evtIdx];
+            if (evt?._summaryId) deletedSummaryIds.add(evt._summaryId);
             meta.events.splice(evtIdx, 1);
         } else if (meta.event && evtIdx === 0) {
             delete meta.event;
         }
+
+        if (deletedSummaryIds.size > 0) {
+            for (const summaryId of deletedSummaryIds) {
+                const result = await _removeSummaryAndRestoreHierarchy(chat, summaryId);
+                if (result?.changedMessageIds?.length) changedMessageIds.push(...result.changedMessageIds);
+            }
+        }
+
+        _commitModifiedMessageMetas(changedMessageIds, { refresh: true });
         await getContext().saveChat();
         showToast(t('toast.saveSuccess'), 'success');
-        updateTimelineDisplay();
-        updateStatusDisplay();
         return;
     }
 
@@ -2310,10 +2333,9 @@ function openTimelineInsertEventModal(refMsgIdx, refEvtIdx, isAbove) {
             meta.timestamp.story_time = time;
         }
 
+        _commitModifiedMessageMetas([refMsgIdx], { refresh: true });
         await getContext().saveChat();
         closeEditModal();
-        updateTimelineDisplay();
-        updateStatusDisplay();
         showToast(t('toast.saveSuccess'), 'success');
     });
 
@@ -2410,10 +2432,9 @@ function openTimelineSummaryModal(refMsgIdx, refEvtIdx, isAbove) {
             manual: true
         });
 
+        _commitModifiedMessageMetas([refMsgIdx], { refresh: true });
         await getContext().saveChat();
         closeEditModal();
-        updateTimelineDisplay();
-        updateStatusDisplay();
         showToast(t('toast.saveSuccess'), 'success');
     });
 
@@ -2863,6 +2884,7 @@ async function deleteSelectedTimelineEvents() {
 
     // 收集被删除的摘要事件的 summaryId，用于级联清理
     const deletedSummaryIds = new Set();
+    const changedMessageIds = [];
     for (const [msgIdx, evtIndices] of msgMap) {
         const meta = chat[msgIdx]?.horae_meta;
         if (!meta?.events) continue;
@@ -2875,6 +2897,7 @@ async function deleteSelectedTimelineEvents() {
     for (const [msgIdx, evtIndices] of msgMap) {
         const meta = chat[msgIdx]?.horae_meta;
         if (!meta) continue;
+        changedMessageIds.push(msgIdx);
 
         if (meta.events && meta.events.length > 0) {
             const sorted = evtIndices.sort((a, b) => b - a);
@@ -2891,15 +2914,15 @@ async function deleteSelectedTimelineEvents() {
     // 级联清理：删除摘要事件时同步清理并回退到子摘要层（如有）
     if (deletedSummaryIds.size > 0) {
         for (const summaryId of deletedSummaryIds) {
-            await _removeSummaryAndRestoreHierarchy(chat, summaryId);
+            const result = await _removeSummaryAndRestoreHierarchy(chat, summaryId);
+            if (result?.changedMessageIds?.length) changedMessageIds.push(...result.changedMessageIds);
         }
     }
 
+    _commitModifiedMessageMetas(changedMessageIds, { refresh: true });
     await getContext().saveChat();
     showToast(t('toast.saveSuccess'), 'success');
     exitTimelineMultiSelect();
-    updateTimelineDisplay();
-    updateStatusDisplay();
 }
 
 function openAgendaEditModal(agendaItem = null) {
@@ -4500,9 +4523,9 @@ function openEventEditModal(messageId, eventIndex = 0) {
                 }
                 delete chatMeta.event;
 
+                _commitModifiedMessageMetas([messageId], { refresh: true });
                 await getContext().saveChat();
                 closeEditModal();
-                updateTimelineDisplay();
                 showToast(t('toast.saveSuccess'), 'success');
                 return;
             }
@@ -4534,9 +4557,9 @@ function openEventEditModal(messageId, eventIndex = 0) {
             delete chatMeta.event;
         }
 
+        _commitModifiedMessageMetas([messageId], { refresh: true });
         await getContext().saveChat();
         closeEditModal();
-        updateTimelineDisplay();
         showToast(t('toast.saveSuccess'), 'success');
     });
 
@@ -4556,9 +4579,9 @@ function openEventEditModal(messageId, eventIndex = 0) {
                 }
                 delete chatMeta.event;
 
+                _commitModifiedMessageMetas([messageId], { refresh: true });
                 getContext().saveChat();
                 closeEditModal();
-                updateTimelineDisplay();
                 showToast(t('toast.saveSuccess'), 'success');
             }
         }
@@ -10779,11 +10802,20 @@ function buildAgendaTypeOptions(selectedType = '计划') {
     `;
 }
 
-function buildAgendaEditorRows(agenda) {
-    if (!agenda || agenda.length === 0) {
+function buildAgendaEditorRows(agenda, meta = null) {
+    const deletedAgendaTexts = Array.isArray(meta?._deletedAgendaTexts) ? meta._deletedAgendaTexts : [];
+    const visibleAgenda = Array.isArray(agenda)
+        ? agenda.filter(item => {
+            const text = String(item?.text || '').trim();
+            if (!text || item?._deleted) return false;
+            return !_isAgendaDeletedByTexts(text, deletedAgendaTexts);
+        })
+        : [];
+
+    if (visibleAgenda.length === 0) {
         return '';
     }
-    return agenda.map(item => `
+    return visibleAgenda.map(item => `
         <div class="horae-editor-row horae-agenda-edit-row" data-agenda-type="${escapeHtml(horaeManager.normalizeAgendaType(item.type))}">
             <select class="horae-agenda-type-select">
                 ${buildAgendaTypeOptions(item.type)}
@@ -10989,7 +11021,7 @@ function buildPanelContent(messageIndex, meta) {
             </div>
             <div class="horae-panel-row full-width">
                 <label><i class="fa-solid fa-list-check"></i> ${t('timeline.agenda')}</label>
-                <div class="horae-agenda-editor">${buildAgendaEditorRows(meta.agenda)}</div>
+                <div class="horae-agenda-editor">${buildAgendaEditorRows(meta.agenda, meta)}</div>
                 <button class="horae-btn-add-agenda-row"><i class="fa-solid fa-plus"></i> ${t('common.add')}</button>
             </div>
             ${buildPanelRelationships(meta)}
@@ -11119,6 +11151,31 @@ function _commitMessageMetaAndRebuild(messageId, meta, options = {}) {
     _rebuildDerivedMetaCaches();
     if (injectTags) injectHoraeTagToMessage(messageId, meta);
     return meta;
+}
+
+function _commitModifiedMessageMetas(messageIds, options = {}) {
+    const { refresh = false } = options;
+    const chat = horaeManager.getChat();
+    const uniqueIds = [...new Set((messageIds || []).filter((id) => Number.isInteger(id) && id >= 0))];
+    const committedIds = [];
+
+    for (const messageId of uniqueIds) {
+        const meta = chat?.[messageId]?.horae_meta;
+        if (!meta) continue;
+        _materializeMessageTableContributions(meta);
+        horaeManager.setMessageMeta(messageId, meta);
+        committedIds.push(messageId);
+    }
+
+    if (committedIds.length > 0) {
+        _rebuildDerivedMetaCaches();
+        for (const messageId of committedIds) {
+            injectHoraeTagToMessage(messageId, chat[messageId].horae_meta);
+        }
+    }
+
+    if (refresh) refreshAllDisplays();
+    return committedIds;
 }
 
 function autoResizePanelTextarea(textarea) {
@@ -11778,6 +11835,7 @@ function savePanelData(panelEl, messageId) {
 /** 构建 <horae> 标签字符串 */
 function buildHoraeTagFromMeta(meta) {
     const lines = [];
+    const deletedAgendaTexts = _collectDeletedAgendaTextsFromMetas([meta]);
 
     if (meta.timestamp?.story_date) {
         let timeLine = `time:${meta.timestamp.story_date}`;
@@ -11866,19 +11924,29 @@ function buildHoraeTagFromMeta(meta) {
 
     if (meta.agenda?.length > 0) {
         for (const item of meta.agenda) {
-            if (item.text) {
+            const text = String(item?.text || '').trim();
+            if (text && !item?._deleted && !_isAgendaDeletedByTexts(text, deletedAgendaTexts)) {
                 const agendaType = horaeManager.normalizeAgendaType(item.type);
                 const datePart = item.date || '';
-                lines.push(`hold:${agendaType}|${datePart}|${item.text}`);
+                lines.push(`hold:${agendaType}|${datePart}|${text}`);
             }
         }
     }
 
-    if (meta.deletedAgenda?.length > 0) {
-        for (const text of meta.deletedAgenda) {
-            const normalized = String(text || '').trim();
-            if (normalized) lines.push(`hold-:${normalized}`);
+    const serializedDeletedAgenda = [];
+    for (const text of meta.deletedAgenda || []) {
+        const normalized = String(text || '').trim();
+        if (normalized && !serializedDeletedAgenda.includes(normalized)) {
+            serializedDeletedAgenda.push(normalized);
         }
+    }
+    for (const text of deletedAgendaTexts) {
+        if (text && !serializedDeletedAgenda.includes(text)) {
+            serializedDeletedAgenda.push(text);
+        }
+    }
+    for (const text of serializedDeletedAgenda) {
+        lines.push(`hold-:${text}`);
     }
 
     if (meta.relationships?.length > 0) {
