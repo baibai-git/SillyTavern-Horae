@@ -153,6 +153,22 @@ const HORAE_REGEX_RULES = [
         minDepth: null,
         maxDepth: null,
     },
+    {
+        id: 'horae_time_hide',
+        scriptName: 'Horae - 隐藏前后时间',
+        description: '隐藏Horae前后时间格式，仅隐藏显示，需要发送给AI',
+        findRegex: '/<(start|end)Time>[\\s\\S]+?<\\/(start|end)Time>/gi',
+        replaceString: '',
+        trimStrings: [],
+        placement: [2],
+        disabled: false,
+        markdownOnly: true,
+        promptOnly: false,
+        runOnEdit: true,
+        substituteRegex: 0,
+        minDepth: null,
+        maxDepth: null,
+    },
 ];
 
 // ============================================
