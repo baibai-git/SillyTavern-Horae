@@ -18636,6 +18636,101 @@ function _applyCarryoverStateSeed(targetMeta, seedMeta) {
     return target;
 }
 
+function _getTableDimensionsFromData(data, fallbackRows = 2, fallbackCols = 2) {
+    let rows = Math.max(2, parseInt(fallbackRows, 10) || 2);
+    let cols = Math.max(2, parseInt(fallbackCols, 10) || 2);
+
+    for (const key of Object.keys(data || {})) {
+        const [r, c] = key.split('-').map(Number);
+        if (!Number.isInteger(r) || !Number.isInteger(c)) continue;
+        rows = Math.max(rows, r + 1);
+        cols = Math.max(cols, c + 1);
+    }
+
+    return { rows, cols };
+}
+
+function _cloneCarryoverTableSnapshot(table) {
+    const data = _deepCloneData(table?.data || {});
+    const { rows, cols } = _getTableDimensionsFromData(data, table?.rows, table?.cols);
+
+    return {
+        id: table?.id || `carry_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: String(table?.name || ''),
+        rows,
+        cols,
+        data,
+        baseData: _deepCloneData(data),
+        baseRows: rows,
+        baseCols: cols,
+        prompt: String(table?.prompt || ''),
+        lockedRows: Array.isArray(table?.lockedRows) ? [...table.lockedRows] : [],
+        lockedCols: Array.isArray(table?.lockedCols) ? [...table.lockedCols] : [],
+        lockedCells: Array.isArray(table?.lockedCells) ? [...table.lockedCells] : [],
+    };
+}
+
+function _tableListToCarryoverOverlayMap(tables) {
+    const overlayMap = {};
+
+    for (const table of tables || []) {
+        const snapshot = _cloneCarryoverTableSnapshot(table);
+        const tableName = snapshot.name.trim();
+        if (!tableName) continue;
+
+        overlayMap[tableName] = {
+            data: _deepCloneData(snapshot.data),
+            rows: snapshot.rows,
+            cols: snapshot.cols,
+            baseData: _deepCloneData(snapshot.baseData),
+            baseRows: snapshot.baseRows,
+            baseCols: snapshot.baseCols,
+        };
+    }
+
+    return overlayMap;
+}
+
+function _buildCarryoverTableSeed(chat, endExclusive) {
+    const cutoff = Number.isInteger(endExclusive)
+        ? Math.max(0, Math.min(chat?.length || 0, endExclusive))
+        : (Array.isArray(chat) ? chat.length : 0);
+    const skipLast = Math.max(0, (chat?.length || 0) - cutoff);
+    const { localTables, resolvedCharacter, resolvedGlobal } = horaeManager._getResolvedTablesAt(skipLast);
+
+    return {
+        customTables: (localTables || []).map(table => _cloneCarryoverTableSnapshot(table)),
+        charTableData: _tableListToCarryoverOverlayMap(resolvedCharacter),
+        globalTableData: _tableListToCarryoverOverlayMap(resolvedGlobal),
+    };
+}
+
+function _applyCarryoverTableSeed(targetMeta, tableSeed) {
+    const target = targetMeta || createEmptyMeta();
+    const seed = tableSeed || {};
+
+    if (Array.isArray(seed.customTables) && seed.customTables.length > 0) {
+        target.customTables = _deepCloneData(seed.customTables);
+    } else {
+        delete target.customTables;
+    }
+
+    if (seed.globalTableData && Object.keys(seed.globalTableData).length > 0) {
+        target.globalTableData = _deepCloneData(seed.globalTableData);
+    } else {
+        delete target.globalTableData;
+    }
+
+    if (seed.charTableData && Object.keys(seed.charTableData).length > 0) {
+        target.charTableData = _deepCloneData(seed.charTableData);
+    } else {
+        delete target.charTableData;
+    }
+
+    delete target.tableContributions;
+    return target;
+}
+
 function _getCarryVisibleIndices(chat, keepCount) {
     const result = { indices: [], aiCount: 0 };
     if (!Array.isArray(chat) || chat.length <= 1) return result;
@@ -18731,6 +18826,7 @@ async function createNewChatWithCarryover() {
     if (!confirm(confirmText)) return;
 
     try {
+        const carryTableSeed = _buildCarryoverTableSeed(sourceChat, carryStart);
         await getContext().saveChat();
         await doNewChat({ deleteCurrentChat: false });
 
@@ -18747,6 +18843,7 @@ async function createNewChatWithCarryover() {
         }
 
         _applyCarryoverStateSeed(targetChat[0].horae_meta, carrySeedMeta);
+        _applyCarryoverTableSeed(targetChat[0].horae_meta, carryTableSeed);
 
         if (!targetChat[0].horae_meta) targetChat[0].horae_meta = createEmptyMeta();
         if (!Array.isArray(targetChat[0].horae_meta.events)) targetChat[0].horae_meta.events = [];
@@ -18770,6 +18867,8 @@ async function createNewChatWithCarryover() {
         for (const msg of carryMessages) {
             targetChat.push(msg);
         }
+
+        horaeManager.rebuildTableData();
 
         await getContext().saveChat();
         if (typeof getContext().reloadCurrentChat === 'function') {
