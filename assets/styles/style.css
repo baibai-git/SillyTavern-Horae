@@ -1426,6 +1426,55 @@
     margin-left: 24px;
 }
 
+.horae-excluded-characters-desc {
+    margin-bottom: 10px;
+}
+
+.horae-excluded-characters-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+}
+
+.horae-excluded-characters-search {
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.horae-character-checkbox-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.horae-character-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px 10px;
+    background: var(--horae-bg-secondary);
+    border: 1px solid var(--horae-border);
+    border-radius: var(--horae-radius-sm);
+    cursor: pointer;
+}
+
+.horae-character-checkbox-item span {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.horae-excluded-characters-empty {
+    font-size: 12px;
+    color: var(--horae-text-muted);
+}
+
 .horae-about {
     text-align: center;
     font-size: 11px;

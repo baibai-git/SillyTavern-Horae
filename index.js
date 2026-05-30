@@ -226,6 +226,7 @@ const DEFAULT_SETTINGS = {
     customLocationPrompt: '',      // 自定义场景记忆提示词（空=使用默认）
     sendRelationships: true,      // 发送关系网络
     sendMood: true,               // 发送情绪/心理状态追踪
+    excludedCharacterNames: [],   // 排除角色：与这些角色聊天时不启用 Horae（仅配置，逻辑后续接入）
     customRelationshipPrompt: '',  // 自定义关系网络提示词（空=使用默认）
     customMoodPrompt: '',          // 自定义情绪追踪提示词（空=使用默认）
     // 自动摘要
@@ -348,6 +349,7 @@ let timelineMultiSelectMode = false; // 时间线多选模式
 let selectedTimelineEvents = new Set(); // 选中的事件（"msgIndex-eventIndex"格式）
 let timelineLongPressTimer = null;  // 时间线长按计时器
 const _panelAiAnalysisInProgress = new Set(); // 底部楼层面板 AI 分析中的消息索引
+let _excludedCharacterNamesCache = null;
 const _hideUnhideDebugStats = {
     hide: 0,
     unhide: 0,
@@ -978,6 +980,33 @@ function _normalizeAutoSummarySettingsInPlace(saved = {}) {
     return changed;
 }
 
+function normalizeCharacterNameList(value) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value.map((name) => String(name || '').trim()).filter(Boolean))];
+}
+
+function syncExcludedCharacterNamesInPlace() {
+    const previous = Array.isArray(settings.excludedCharacterNames) ? settings.excludedCharacterNames : [];
+    const normalized = normalizeCharacterNameList(previous);
+    const changed = normalized.length !== previous.length || normalized.some((name, index) => name !== previous[index]);
+    settings.excludedCharacterNames = normalized;
+    return changed;
+}
+
+function getCurrentCharacterCardName() {
+    return String(getContext()?.name2 || '').trim();
+}
+
+function isCurrentChatExcludedFromHorae() {
+    const currentName = getCurrentCharacterCardName();
+    if (!currentName) return false;
+    return normalizeCharacterNameList(settings.excludedCharacterNames).includes(currentName);
+}
+
+function isHoraeEnabledForCurrentChat() {
+    return !!settings.enabled && !isCurrentChatExcludedFromHorae();
+}
+
 function loadSettings() {
     let changed = false;
     const saved = extension_settings[EXTENSION_NAME] || null;
@@ -997,6 +1026,7 @@ function loadSettings() {
         settings.autoFillPrevTimelineOnSend = true;
         changed = true;
     }
+    if (syncExcludedCharacterNamesInPlace()) changed = true;
     if (_normalizeAutoSummarySettingsInPlace(saved || {}) || _normalizePromptSettingsInPlace() || _normalizeVectorRecallPresetsInPlace() || _normalizeVectorStripTagsInPlace(saved || {}) || _normalizeRpgSettingsInPlace()) changed = true;
     if (_migrateLegacyVectorSettings(settings)) changed = true;
     // console.log(
@@ -12432,8 +12462,105 @@ function initTabs() {
             case 'items':
                 updateItemsDisplay();
                 break;
+            case 'settings':
+                void renderExcludedCharacterOptions();
+                break;
         }
     });
+}
+
+function collectExcludedCharacterNamesFromUi() {
+    const visibleNames = [];
+    const selectedNames = [];
+
+    document.querySelectorAll('#horae-excluded-characters-list .horae-excluded-character-checkbox').forEach((input) => {
+        const name = String(input.value || '').trim();
+        if (!name) return;
+        visibleNames.push(name);
+        if (input.checked) selectedNames.push(name);
+    });
+
+    const hiddenSelections = normalizeCharacterNameList(settings.excludedCharacterNames)
+        .filter((name) => !visibleNames.includes(name));
+
+    settings.excludedCharacterNames = normalizeCharacterNameList([
+        ...hiddenSelections,
+        ...selectedNames,
+    ]);
+}
+
+function getExcludedCharacterSearchQuery() {
+    const input = document.getElementById('horae-excluded-characters-search');
+    return String(input?.value || '').trim().toLowerCase();
+}
+
+function paintExcludedCharacterOptions(names) {
+    const listEl = document.getElementById('horae-excluded-characters-list');
+    const emptyEl = document.getElementById('horae-excluded-characters-empty');
+    if (!listEl || !emptyEl) return;
+
+    listEl.innerHTML = '';
+    const query = getExcludedCharacterSearchQuery();
+    const filteredNames = query
+        ? names.filter((name) => name.toLowerCase().includes(query))
+        : names;
+
+    if (!filteredNames.length) {
+        emptyEl.textContent = names.length ? '没有匹配的角色' : '暂无角色';
+        emptyEl.style.display = '';
+        return;
+    }
+
+    const selectedSet = new Set(normalizeCharacterNameList(settings.excludedCharacterNames));
+    listEl.innerHTML = filteredNames.map((name) => `
+        <label class="horae-character-checkbox-item">
+            <input
+                type="checkbox"
+                class="horae-excluded-character-checkbox"
+                value="${escapeHtml(name)}"
+                ${selectedSet.has(name) ? 'checked' : ''}
+            >
+            <span>${escapeHtml(name)}</span>
+        </label>
+    `).join('');
+    emptyEl.style.display = 'none';
+}
+
+async function renderExcludedCharacterOptions(forceReload = false) {
+    const listEl = document.getElementById('horae-excluded-characters-list');
+    const emptyEl = document.getElementById('horae-excluded-characters-empty');
+    const refreshBtn = document.getElementById('horae-excluded-characters-refresh');
+    if (!listEl || !emptyEl) return;
+
+    if (!forceReload && Array.isArray(_excludedCharacterNamesCache)) {
+        paintExcludedCharacterOptions(_excludedCharacterNamesCache);
+        return;
+    }
+
+    listEl.innerHTML = '';
+    emptyEl.textContent = t('common.loading');
+    emptyEl.style.display = '';
+    if (refreshBtn) refreshBtn.disabled = true;
+
+    const getCharacterNames = window.TavernHelper?.getCharacterNames;
+    if (typeof getCharacterNames !== 'function') {
+        emptyEl.textContent = '角色列表暂不可用';
+        if (refreshBtn) refreshBtn.disabled = false;
+        return;
+    }
+
+    try {
+        const rawNames = await getCharacterNames();
+        const names = normalizeCharacterNameList(rawNames)
+            .sort((a, b) => a.localeCompare(b, getLanguage(), { sensitivity: 'base', numeric: true }));
+        _excludedCharacterNamesCache = names;
+        paintExcludedCharacterOptions(names);
+    } catch (err) {
+        console.warn('[Horae] 加载排除角色列表失败:', err);
+        emptyEl.textContent = '角色列表加载失败';
+    } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
+    }
 }
 
 // ============================================
@@ -12525,6 +12652,20 @@ function initSettingsEvents() {
         settings.showTopIcon = this.checked;
         saveSettings();
         applyTopIconVisibility();
+    });
+
+    $(document).on('change', '.horae-excluded-character-checkbox', function () {
+        collectExcludedCharacterNamesFromUi();
+        saveSettings();
+    });
+
+    $('#horae-excluded-characters-search').on('input', function () {
+        void renderExcludedCharacterOptions();
+    });
+
+    $('#horae-excluded-characters-refresh').on('click', function (event) {
+        event.preventDefault();
+        void renderExcludedCharacterOptions(true);
     });
 
     $('#horae-setting-injection-position').on('change', function () {
@@ -13973,6 +14114,16 @@ function initSettingsEvents() {
         icon.toggleClass('collapsed');
     });
 
+    $('#horae-excluded-characters-collapse-toggle').on('click', function () {
+        const body = $('#horae-excluded-characters-collapse-body');
+        const icon = $(this).find('.horae-collapse-icon');
+        body.slideToggle(200);
+        icon.toggleClass('collapsed');
+        if (body.is(':visible')) {
+            void renderExcludedCharacterOptions();
+        }
+    });
+
     // 副API折叠切换
     $('#horae-sub-api-collapse-toggle').on('click', function () {
         const body = $('#horae-sub-api-collapse-body');
@@ -14489,6 +14640,7 @@ function syncSettingsToUI() {
     $('#horae-ext-show-top-icon').prop('checked', settings.showTopIcon !== false);
     $('#horae-setting-injection-depth-source').val(settings.injectionDepthSource === 'preset' ? 'preset' : 'system');
     $('#horae-setting-injection-position').val(settings.injectionPosition);
+    void renderExcludedCharacterOptions();
     $('#horae-setting-send-timeline').prop('checked', settings.sendTimeline);
     $('#horae-setting-context-depth').val(Number.isFinite(parseInt(settings.contextDepth, 10)) ? Math.max(0, parseInt(settings.contextDepth, 10)) : 15);
     $('#horae-setting-send-characters').prop('checked', settings.sendCharacters);
@@ -19655,7 +19807,7 @@ function _sanitizeThinkBlockHoraeTags(mes) {
  * AI回复接收时触发
  */
 async function onMessageReceived(messageId) {
-    if (!settings.enabled || !settings.autoParse) return;
+    if (!isHoraeEnabledForCurrentChat() || !settings.autoParse) return;
     _autoSummaryRanThisTurn = false;
 
     let isRegenerate = false;
@@ -20660,7 +20812,7 @@ async function onPromptReady(eventData) {
         console.log('[Horae] Internal no-context marker detected, skip Horae context injection for this request');
         return;
     }
-    if (!settings.enabled || !settings.injectContext) return;
+    if (!isHoraeEnabledForCurrentChat() || !settings.injectContext) return;
     if (eventData.dryRun) return;
 
     try {

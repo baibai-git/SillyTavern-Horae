@@ -795,6 +795,34 @@
                 </div>
 
                 <div class="horae-settings-section">
+                    <div class="horae-section-header horae-collapse-header" id="horae-excluded-characters-collapse-toggle">
+                        <i class="fa-solid fa-user-slash"></i>
+                        排除角色
+                        <i class="fa-solid fa-chevron-down horae-collapse-icon collapsed"></i>
+                    </div>
+                    <div id="horae-excluded-characters-collapse-body" style="display: none;">
+                        <span class="horae-setting-hint horae-excluded-characters-desc">
+                            <i class="fa-solid fa-circle-info"></i>
+                            在和选中的角色进行聊天时，不会启用horae
+                        </span>
+                        <div class="horae-excluded-characters-toolbar">
+                            <button id="horae-excluded-characters-refresh" type="button" class="horae-rpg-btn-sm">
+                                <i class="fa-solid fa-rotate"></i>
+                                刷新列表
+                            </button>
+                        </div>
+                        <input
+                            type="text"
+                            id="horae-excluded-characters-search"
+                            class="horae-edit-field horae-excluded-characters-search"
+                            placeholder="搜索角色名"
+                        >
+                        <div id="horae-excluded-characters-list" class="horae-character-checkbox-list"></div>
+                        <div id="horae-excluded-characters-empty" class="horae-excluded-characters-empty">加载中...</div>
+                    </div>
+                </div>
+
+                <div class="horae-settings-section">
                     <div class="horae-section-header horae-collapse-header" id="horae-sub-api-collapse-toggle"
                         data-i18n="settings.subApiSection">
                         <i class="fa-solid fa-plug-circle-bolt"></i>
