@@ -4476,6 +4476,8 @@ function openEventEditModal(messageId, eventIndex = 0) {
     const eventsArr = meta.events || (meta.event ? [meta.event] : []);
     const event = eventsArr[eventIndex] || {};
     const totalEvents = eventsArr.length;
+    const currentDate = meta.timestamp?.story_date || '';
+    const currentTime = meta.timestamp?.story_time || '';
 
     const modalHtml = `
         <div id="horae-edit-modal" class="horae-modal">
@@ -4484,6 +4486,14 @@ function openEventEditModal(messageId, eventIndex = 0) {
                     <i class="fa-solid fa-pen"></i> ${t('modal.editEvent', { id: messageId })}${totalEvents > 1 ? ` (${eventIndex + 1}/${totalEvents})` : ''}
                 </div>
                 <div class="horae-modal-body horae-edit-modal-body">
+                    <div class="horae-edit-field">
+                        <label>${t('label.date')}</label>
+                        <input type="text" id="edit-event-date" value="${escapeHtml(currentDate)}" placeholder="2026/2/14">
+                    </div>
+                    <div class="horae-edit-field">
+                        <label>${t('label.time')}</label>
+                        <input type="text" id="edit-event-time" value="${escapeHtml(currentTime)}" placeholder="15:00">
+                    </div>
                     <div class="horae-edit-field">
                         <label>${t('label.eventLevel')}</label>
                         <select id="edit-event-level">
@@ -4522,6 +4532,8 @@ function openEventEditModal(messageId, eventIndex = 0) {
         const chat = horaeManager.getChat();
         const chatMeta = chat[messageId]?.horae_meta;
         if (chatMeta) {
+            const newDate = document.getElementById('edit-event-date').value.trim();
+            const newTime = document.getElementById('edit-event-time').value.trim();
             const newLevel = document.getElementById('edit-event-level').value;
             const newSummary = document.getElementById('edit-event-summary').value.trim();
 
@@ -4550,6 +4562,12 @@ function openEventEditModal(messageId, eventIndex = 0) {
             if (!chatMeta.events) {
                 chatMeta.events = chatMeta.event ? [chatMeta.event] : [];
             }
+            if (!chatMeta.timestamp) {
+                chatMeta.timestamp = {};
+            }
+            chatMeta.timestamp.story_date = newDate;
+            chatMeta.timestamp.story_time = newTime;
+            chatMeta.timestamp.absolute = new Date().toISOString();
 
             // 更新或添加事件
             const isSummaryLevel = newLevel === '摘要';
