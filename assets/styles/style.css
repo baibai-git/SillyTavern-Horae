@@ -819,6 +819,48 @@
     overflow-y: auto;
 }
 
+/* === 无有效数据楼层号样式 === */
+.horae-empty-floors-container {
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(239, 68, 68, 0.05);
+    border: 1px dashed rgba(239, 68, 68, 0.25);
+    border-radius: var(--horae-radius);
+    font-size: 12px;
+}
+.horae-empty-floors-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--horae-danger);
+    margin-bottom: 6px;
+}
+.horae-empty-floors-list {
+    color: var(--horae-text-muted);
+    word-break: break-all;
+    line-height: 1.4;
+}
+.horae-empty-floor-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    margin: 2px;
+    background: var(--horae-bg-secondary);
+    border: 1px solid var(--horae-border);
+    border-radius: var(--horae-radius-sm);
+    color: var(--horae-text);
+    font-weight: 500;
+    cursor: pointer;
+}
+.horae-empty-floor-badge:hover:not(:disabled) {
+    border-color: var(--horae-primary-light);
+    color: var(--horae-primary-light);
+}
+.horae-empty-floor-badge:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
 .horae-timeline-item {
     display: flex;
     align-items: flex-start;

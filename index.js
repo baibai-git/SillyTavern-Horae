@@ -1557,6 +1557,7 @@ function updateTimelineDisplay() {
                 <span>${t('ui.noFilteredEvents', { search: searchText, filter: filterText })}</span>
             </div>
         `;
+        updateEmptyFloorsDisplay();
         return;
     }
 
@@ -1747,6 +1748,114 @@ function updateTimelineDisplay() {
     });
 
     bindEditButtons();
+
+    // 更新无有效数据楼层号展示
+    updateEmptyFloorsDisplay();
+}
+
+/**
+ * 更新并显示无有效数据的楼层号
+ */
+function updateEmptyFloorsDisplay() {
+    const container = document.getElementById('horae-empty-floors-container');
+    const listEl = document.getElementById('horae-empty-floors-list');
+    if (!container || !listEl) return;
+
+    const chat = horaeManager.getChat() || [];
+    const emptyFloors = [];
+
+    for (let i = 0; i < chat.length; i++) {
+        const msg = chat[i];
+        if (!msg || msg.is_user) continue;
+
+        // 仅检测包含 horae_meta 且未主动设置 _skipHorae 标记的 AI 消息
+        // 如果从未被解析且没打 skipHorae，或者解析出来的各项元数据皆空
+        const meta = msg.horae_meta;
+        if (meta?._skipHorae) continue;
+
+        const hasEvents = (meta?.events && meta.events.length > 0) || (meta?.event?.summary && String(meta.event.summary).trim());
+        const hasItems = meta?.items && Object.keys(meta.items).length > 0;
+        const hasNpcs = meta?.npcs && Object.keys(meta.npcs).length > 0;
+        const hasAffection = meta?.affection && Object.keys(meta.affection).length > 0;
+        const hasMood = meta?.mood && Object.keys(meta.mood).length > 0;
+        const hasRelationships = meta?.relationships && meta.relationships.length > 0;
+        const hasScene = (meta?.scene?.location && String(meta.scene.location).trim()) || (meta?.scene?.scene_desc && String(meta.scene.scene_desc).trim());
+
+        if (!hasEvents && !hasItems && !hasNpcs && !hasAffection && !hasMood && !hasRelationships && !hasScene) {
+            emptyFloors.push(i);
+        }
+    }
+
+    if (emptyFloors.length === 0) {
+        container.style.display = 'none';
+        listEl.innerHTML = '';
+    } else {
+        container.style.display = 'block';
+        listEl.innerHTML = emptyFloors.map(floor => `
+            <button type="button" class="horae-empty-floor-badge" data-message-id="${floor}" title="点击补全该楼层">#${floor}</button>
+        `).join('');
+
+        listEl.querySelectorAll('.horae-empty-floor-badge').forEach(badge => {
+            badge.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const messageId = parseInt(badge.dataset.messageId);
+                if (Number.isInteger(messageId)) {
+                    await fillEmptyFloorFromTimeline(messageId, badge);
+                }
+            });
+        });
+    }
+}
+
+async function fillEmptyFloorFromTimeline(messageId, badgeEl = null) {
+    const chat = horaeManager.getChat();
+    const message = chat?.[messageId];
+    if (!message || message.is_user) {
+        showToast(t('toast.cannotGetContent'), 'error');
+        return false;
+    }
+
+    if (!confirm(`是否补全该楼层 #${messageId}？`)) {
+        return false;
+    }
+
+    const originalText = badgeEl?.textContent || '';
+    if (badgeEl) {
+        badgeEl.disabled = true;
+        badgeEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    }
+
+    return await handlePanelAiAnalyzeAction(messageId, async () => {
+        try {
+            const result = await analyzeMessageWithAI(message.mes, { messageIndex: messageId });
+            if (!result) {
+                showToast(t('toast.aiAnalysisNoData'), 'warning');
+                return;
+            }
+
+            const existingMeta = horaeManager.getMessageMeta(messageId) || createEmptyMeta();
+            const newMeta = horaeManager.mergeParsedToMeta(createEmptyMeta(), result);
+            _preserveRebuildControlFlags(newMeta, existingMeta);
+            if (result.deletedAgenda?.length > 0) {
+                horaeManager.removeCompletedAgenda(result.deletedAgenda);
+            }
+            _commitMessageMetaAndRebuild(messageId, newMeta);
+            await getContext().saveChat();
+            refreshAllDisplays();
+            showToast(t('toast.saveSuccess'), 'success');
+        } catch (error) {
+            console.error('[Horae] 时间线空楼层补全失败:', error);
+            showToast(t('toast.aiAnalysisFailed', { error: error.message }), 'error');
+        } finally {
+            if (badgeEl?.isConnected) {
+                badgeEl.disabled = false;
+                badgeEl.textContent = originalText;
+            }
+        }
+    }, {
+        reanalyzeConfirmText: `该楼层已有时间线，是否重新补全 #${messageId}？`,
+    });
 }
 
 /** 批量隐藏/显示聊天消息楼层（调用酒馆原生 /hide /unhide） */
