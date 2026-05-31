@@ -81,6 +81,7 @@ export class VectorManager {
         this.totalDocuments = 0;
         this._pendingCallbacks = new Map();
         this._callId = 0;
+        this._dbOpenPromise = null;
         this._lastDebugInfo = null;
         this._recallCache = new Map();
         this._recallCacheLimit = RECALL_CACHE_LIMIT;
@@ -3490,6 +3491,31 @@ export class VectorManager {
                 this.db = null;
             }
         }
+
+        if (this._dbOpenPromise) {
+            return this._dbOpenPromise;
+        }
+
+        this._dbOpenPromise = this._openDBWithRecovery();
+        try {
+            await this._dbOpenPromise;
+        } finally {
+            this._dbOpenPromise = null;
+        }
+    }
+
+    async _openDBWithRecovery() {
+        try {
+            await this._openDBRequest();
+        } catch (err) {
+            if (!this._isDbVersionError(err)) throw err;
+
+            console.warn('[Horae Vector] Incompatible IndexedDB version detected, clearing cached vector DB and recreating...', err);
+            await this._recreateVectorDB(err);
+        }
+    }
+
+    _openDBRequest() {
         return new Promise((resolve, reject) => {
             const req = indexedDB.open(DB_NAME, DB_VERSION);
             req.onupgradeneeded = () => {
@@ -3514,6 +3540,36 @@ export class VectorManager {
             };
             req.onerror = () => reject(req.error);
         });
+    }
+
+    _isDbVersionError(err) {
+        if (!err) return false;
+        if (err.name === 'VersionError') return true;
+        return /requested version .* less than the existing version/i.test(err.message || '');
+    }
+
+    async _recreateVectorDB(originalError) {
+        if (this.db) {
+            try { this.db.close(); } catch (_) { }
+            this.db = null;
+        }
+
+        await new Promise((resolve, reject) => {
+            const req = indexedDB.deleteDatabase(DB_NAME);
+            req.onblocked = () => {
+                reject(new Error('检测到旧版向量数据库与当前分支不兼容，请关闭其他 SillyTavern 标签页后重试。'));
+            };
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error || new Error('删除旧版向量数据库失败'));
+        }).catch(err => {
+            throw new Error(`检测到旧版向量数据库与当前分支不兼容，自动重建失败：${err?.message || originalError?.message || err}`);
+        });
+
+        try {
+            await this._openDBRequest();
+        } catch (err) {
+            throw new Error(`向量数据库已清空，但重新创建失败：${err?.message || originalError?.message || err}`);
+        }
     }
 
     async _saveVector(messageIndex, data) {
