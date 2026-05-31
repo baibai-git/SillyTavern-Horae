@@ -215,7 +215,6 @@ const DEFAULT_SETTINGS = {
     aiScanIncludeScene: false,    // AI摘要是否提取场景记忆
     aiScanIncludeRelationship: false, // AI摘要是否提取关系网络
     panelWidth: 100,               // 消息面板宽度百分比（50-100）
-    panelOffset: 0,                // 消息面板右偏移量（px）
     themeMode: 'dark',             // 插件主题：dark / light / custom-{index}
     customCSS: '',                 // 用户自定义CSS
     customThemes: [],              // 导入的美化主题 [{name, author, variables, css}]
@@ -8563,8 +8562,6 @@ function renderRpgHud(messageEl, messageIndex) {
         if (hudEl) {
             const w = Math.max(50, Math.min(100, settings.panelWidth || 100));
             if (w < 100) hudEl.style.maxWidth = `${w}%`;
-            const ofs = Math.max(0, settings.panelOffset || 0);
-            if (ofs > 0) hudEl.style.marginLeft = `${ofs}px`;
             if (isLightMode()) hudEl.classList.add('horae-light');
         }
     }
@@ -8676,8 +8673,6 @@ function _renderRpgHudFromSnapshot(messageEl, messageIndex, rpg) {
         if (hudEl) {
             const w = Math.max(50, Math.min(100, settings.panelWidth || 100));
             if (w < 100) hudEl.style.maxWidth = `${w}%`;
-            const ofs = Math.max(0, settings.panelOffset || 0);
-            if (ofs > 0) hudEl.style.marginLeft = `${ofs}px`;
             if (isLightMode()) hudEl.classList.add('horae-light');
         }
     }
@@ -9416,15 +9411,13 @@ function applyTopIconVisibility() {
     $('#horae-ext-show-top-icon').prop('checked', show);
 }
 
-/** 应用消息面板宽度和偏移设置（底部栏 + RPG HUD 统一跟随） */
+/** 应用消息面板宽度设置（底部栏 + RPG HUD 统一跟随） */
 function applyPanelWidth() {
     const width = Math.max(50, Math.min(100, settings.panelWidth || 100));
-    const offset = Math.max(0, settings.panelOffset || 0);
     const mw = width < 100 ? `${width}%` : '';
-    const ml = offset > 0 ? `${offset}px` : '';
     document.querySelectorAll('.horae-message-panel, .horae-rpg-hud').forEach(el => {
         el.style.maxWidth = mw;
-        el.style.marginLeft = ml;
+        el.style.marginLeft = '';
     });
 }
 
@@ -10598,10 +10591,6 @@ function _applyMessagePanelHostLayout(panelEl) {
     if (w < 100) {
         panelEl.style.maxWidth = `${w}%`;
     }
-    const ofs = Math.max(0, settings.panelOffset || 0);
-    if (ofs > 0) {
-        panelEl.style.marginLeft = `${ofs}px`;
-    }
     if (isLightMode()) {
         panelEl.classList.add('horae-light');
     }
@@ -10970,14 +10959,10 @@ function addLegacyMessagePanel(messageEl, messageIndex) {
             if (!settings.showMessagePanel && panelEl) {
                 panelEl.style.display = 'none';
             }
-            // 应用自定义宽度和偏移
+            // 应用自定义宽度
             const w = Math.max(50, Math.min(100, settings.panelWidth || 100));
             if (w < 100 && panelEl) {
                 panelEl.style.maxWidth = `${w}%`;
-            }
-            const ofs = Math.max(0, settings.panelOffset || 0);
-            if (ofs > 0 && panelEl) {
-                panelEl.style.marginLeft = `${ofs}px`;
             }
             // 继承主题模式
             if (isLightMode() && panelEl) {
@@ -13921,13 +13906,6 @@ function initSettingsEvents() {
         saveSettings();
         applyPanelWidth();
     });
-    $('#horae-setting-panel-offset').on('input', function () {
-        const val = Math.max(0, parseInt(this.value) || 0);
-        settings.panelOffset = val;
-        $('#horae-panel-offset-value').text(`${val}px`);
-        saveSettings();
-        applyPanelWidth();
-    });
 
     // 主题模式切换
     $('#horae-setting-theme-mode').on('change', function () {
@@ -14935,11 +14913,8 @@ function syncSettingsToUI() {
     $('#horae-mood-prompt-count').text(moodPromptVal.length);
     $('#horae-rpg-prompt-count').text(rpgPromptVal.length);
 
-    // 面板宽度和偏移
+    // 面板宽度
     $('#horae-setting-panel-width').val(settings.panelWidth || 100);
-    const ofs = settings.panelOffset || 0;
-    $('#horae-setting-panel-offset').val(ofs);
-    $('#horae-panel-offset-value').text(`${ofs}px`);
     applyPanelWidth();
 
     // 主题模式
