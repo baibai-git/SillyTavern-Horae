@@ -3,7 +3,7 @@
  * 基于时间锚点的AI记忆增强系统
  * 
  * 作者: SenriYuki，柏柏
- * 版本: 1.14.8B
+ * 版本: 1.14.9B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -17,7 +17,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.8B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.9B';
 
 // ============================================
 // 常量定义
@@ -25,7 +25,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.14.8B';
+const VERSION = '1.14.9B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -179,7 +179,9 @@ const DEFAULT_SETTINGS = {
     aiOutputLanguage: 'auto',
     enabled: true,
     autoParse: true,
-    autoFillPrevTimelineOnSend: true, // 发送前自动补全上一条AI消息的时间线（默认关闭，避免静默误写历史）
+    autoFillPrevTimelineOnSend: true, // 发送前自动补全上一条AI消息的时间线（默认开启）
+    autoFillRetryOnFailure: true, // 自动补全失败后自动重试一次（默认开启）
+    autoFillBlockGenerationOnFailure: true, // 旧楼层缺少数据时拦截本次新消息生成（默认开启）
     injectContext: true,
     injectCustomPrompts: true, // 是否在摘要/总结后台任务中注入自定义头尾提示词
     showMessagePanel: true,
@@ -1018,8 +1020,14 @@ function loadSettings() {
         settings = { ...DEFAULT_SETTINGS };
     }
     if (!settings._autoFillPrevTimelineDefaultOffMigrated) {
-        settings.autoFillPrevTimelineOnSend = false;
         settings._autoFillPrevTimelineDefaultOffMigrated = true;
+        changed = true;
+    }
+    if (!settings._autoFillDefaultsAllOnMigrated) {
+        settings.autoFillPrevTimelineOnSend = true;
+        settings.autoFillRetryOnFailure = true;
+        settings.autoFillBlockGenerationOnFailure = true;
+        settings._autoFillDefaultsAllOnMigrated = true;
         changed = true;
     }
     if (settings.subApiScopeBrief && !settings.autoFillPrevTimelineOnSend) {
@@ -1761,6 +1769,13 @@ function updateEmptyFloorsDisplay() {
     const listEl = document.getElementById('horae-empty-floors-list');
     if (!container || !listEl) return;
 
+    const ctx = getContext();
+    if (!ctx?.chatId) {
+        container.style.display = 'none';
+        listEl.innerHTML = '';
+        return;
+    }
+
     const chat = horaeManager.getChat() || [];
     const emptyFloors = [];
 
@@ -1828,11 +1843,15 @@ async function fillEmptyFloorFromTimeline(messageId, badgeEl = null) {
 
     return await handlePanelAiAnalyzeAction(messageId, async () => {
         try {
-            const result = await analyzeMessageWithAI(message.mes, { messageIndex: messageId });
-            if (!result) {
-                showToast(t('toast.aiAnalysisNoData'), 'warning');
+            const analysis = await analyzeMessageWithAI(message.mes, {
+                messageIndex: messageId,
+                returnStatus: true,
+            });
+            if (analysis?.status !== 'ok') {
+                showToast(t(analysis?.status === 'empty' ? 'toast.aiAnalysisEmpty' : 'toast.aiAnalysisNoData'), 'warning');
                 return;
             }
+            const result = analysis.parsed;
 
             const existingMeta = horaeManager.getMessageMeta(messageId) || createEmptyMeta();
             const newMeta = horaeManager.mergeParsedToMeta(createEmptyMeta(), result);
@@ -10748,11 +10767,15 @@ async function _aiAnalyzeMessagePanelMetaForVue(messageId) {
             return;
         }
 
-        const result = await analyzeMessageWithAI(message.mes, { messageIndex: messageId });
-        if (!result) {
-            showToast(t('toast.aiAnalysisNoData'), 'warning');
+        const analysis = await analyzeMessageWithAI(message.mes, {
+            messageIndex: messageId,
+            returnStatus: true,
+        });
+        if (analysis?.status !== 'ok') {
+            showToast(t(analysis?.status === 'empty' ? 'toast.aiAnalysisEmpty' : 'toast.aiAnalysisNoData'), 'warning');
             return;
         }
+        const result = analysis.parsed;
 
         const existingMeta = horaeManager.getMessageMeta(messageId) || createEmptyMeta();
         const newMeta = horaeManager.mergeParsedToMeta(createEmptyMeta(), result);
@@ -11616,9 +11639,13 @@ function bindPanelEvents(panelEl) {
         }
 
         try {
-            const result = await analyzeMessageWithAI(message.mes, { messageIndex: messageId });
+            const analysis = await analyzeMessageWithAI(message.mes, {
+                messageIndex: messageId,
+                returnStatus: true,
+            });
 
-            if (result) {
+            if (analysis?.status === 'ok') {
+                const result = analysis.parsed;
                 const existingMeta = horaeManager.getMessageMeta(messageId) || createEmptyMeta();
                 const newMeta = horaeManager.mergeParsedToMeta(createEmptyMeta(), result);
                 _preserveRebuildControlFlags(newMeta, existingMeta);
@@ -11663,7 +11690,7 @@ function bindPanelEvents(panelEl) {
                     summaryChars.textContent = t('ui.presentCount', { n: newMeta.scene.characters_present.length });
                 }
             } else {
-                showToast(t('toast.aiAnalysisNoData'), 'warning');
+                showToast(t(analysis?.status === 'empty' ? 'toast.aiAnalysisEmpty' : 'toast.aiAnalysisNoData'), 'warning');
             }
         } catch (error) {
             console.error('[Horae] AI分析失败:', error);
@@ -12729,6 +12756,16 @@ function initSettingsEvents() {
         saveSettings();
     });
 
+    $('#horae-setting-auto-fill-retry-on-failure').on('change', function () {
+        settings.autoFillRetryOnFailure = this.checked;
+        saveSettings();
+    });
+
+    $('#horae-setting-auto-fill-block-generation-on-failure').on('change', function () {
+        settings.autoFillBlockGenerationOnFailure = this.checked;
+        saveSettings();
+    });
+
     $('#horae-setting-inject-context').on('change', function () {
         settings.injectContext = this.checked;
         saveSettings();
@@ -13423,7 +13460,7 @@ function initSettingsEvents() {
 
     // ── Horae 全局配置 导出/导入/重置 ──
     const _SETTINGS_EXPORT_KEYS = [
-        'enabled', 'autoParse', 'gzipSaveRequests', 'autoFillPrevTimelineOnSend', 'injectContext', 'injectCustomPrompts', 'showMessagePanel', 'showTopIcon',
+        'enabled', 'autoParse', 'gzipSaveRequests', 'autoFillPrevTimelineOnSend', 'autoFillRetryOnFailure', 'autoFillBlockGenerationOnFailure', 'injectContext', 'injectCustomPrompts', 'showMessagePanel', 'showTopIcon',
         'useNewMessagePanel',
         'messagePanelTheme', 'messagePanelCustomThemes',
         'injectionDepthSource', 'injectionPosition',
@@ -14223,6 +14260,13 @@ function initSettingsEvents() {
         icon.toggleClass('collapsed');
     });
 
+    $('#horae-auto-fill-collapse-toggle').on('click', function () {
+        const body = $('#horae-auto-fill-collapse-body');
+        const icon = $(this).find('.horae-collapse-icon');
+        body.slideToggle(200);
+        icon.toggleClass('collapsed');
+    });
+
     $('#horae-excluded-characters-collapse-toggle').on('click', function () {
         const body = $('#horae-excluded-characters-collapse-body');
         const icon = $(this).find('.horae-collapse-icon');
@@ -14741,6 +14785,8 @@ function syncSettingsToUI() {
     $('#horae-setting-auto-parse').prop('checked', settings.autoParse);
     $('#horae-setting-gzip-save-requests').prop('checked', settings.gzipSaveRequests !== false);
     $('#horae-setting-auto-fill-prev-timeline').prop('checked', settings.autoFillPrevTimelineOnSend === true);
+    $('#horae-setting-auto-fill-retry-on-failure').prop('checked', settings.autoFillRetryOnFailure === true);
+    $('#horae-setting-auto-fill-block-generation-on-failure').prop('checked', settings.autoFillBlockGenerationOnFailure === true);
     $('#horae-setting-inject-context').prop('checked', settings.injectContext);
     $('#horae-setting-inject-custom-prompts').prop('checked', !!settings.injectCustomPrompts);
     $('#horae-setting-show-panel').prop('checked', settings.showMessagePanel);
@@ -17054,18 +17100,10 @@ function _planAutoBufferVisibilityByKeepRecent(chat, keepRecent, activeSummaryCo
         ? new Set([...activeSummaryCoveredIndices].filter(i => Number.isInteger(i) && i >= 0 && i < endExclusive))
         : new Set([..._collectActiveSummaryCoveredIndices(chat)].filter(i => i < endExclusive));
 
-    // 旧楼层自动隐藏策略：从第一条“应隐藏的AI楼层”开始，到 keepStart 前一层，连续作为隐藏候选。
-    let firstHideAnchor = -1;
-    for (const aiIdx of keepWindow.allAiIndices) {
-        if (aiIdx >= keepStart) break;
-        if (coveredSet.has(aiIdx)) continue;
-        firstHideAnchor = aiIdx;
-        break;
-    }
-
+    // 旧楼层自动隐藏策略：从 #0 到 keepStart 前一层连续作为隐藏候选，避免漏掉中间 USER 消息。
     const targetHideSet = new Set();
-    if (firstHideAnchor >= 0) {
-        for (let i = firstHideAnchor; i < keepStart; i++) {
+    if (keepStart > 0) {
+        for (let i = 0; i < keepStart; i++) {
             const msg = chat[i];
             if (!msg) continue;
             if (msg.horae_meta?._skipHorae) continue;
@@ -19609,6 +19647,7 @@ event 唯一且只放在 <horaeevent> 内。
 async function analyzeMessageWithAI(messageContent, opts = {}) {
     const {
         messageIndex,
+        returnStatus = false,
         noContextInjectionMarker = false,
         noVectorRecallMarker = true,
         noTimelineInjectionMarker = true,
@@ -19694,15 +19733,36 @@ async function analyzeMessageWithAI(messageContent, opts = {}) {
 
         if (response) {
             console.log(`AI分析结果:\n${response}`);
-            const parsed = horaeManager.parseHoraeTag(response);
-            return parsed;
         }
+
+        const analysis = _parseAiAnalysisResponse(response);
+        if (returnStatus) return analysis;
+        if (analysis.status === 'ok') return analysis.parsed;
     } catch (error) {
         console.error('[Horae] AI分析调用失败:', error);
         throw error;
     }
 
     return null;
+}
+
+function _parseAiAnalysisResponse(response) {
+    const rawText = typeof response === 'string' ? response : '';
+    const cleanedText = rawText
+        .replace(/<think(?:ing)?[\s>][\s\S]*?<\/think(?:ing)?>/gi, '')
+        .replace(/<!--horae[\s\S]*?-->/gi, '')
+        .trim();
+
+    if (!cleanedText) {
+        return { status: 'empty', parsed: null };
+    }
+
+    const parsed = horaeManager.parseHoraeTag(rawText);
+    if (parsed) {
+        return { status: 'ok', parsed };
+    }
+
+    return { status: 'no_data', parsed: null };
 }
 
 function _buildAnalysisContext(state, targetIndex, userName) {
@@ -19777,20 +19837,111 @@ function _rpgPayloadHasContent(rpg) {
         || (rpg.baseChanges || []).length > 0;
 }
 
-/**
- * 发送前补齐上一条AI楼层：缺 horae/horaeevent，或 RPG 模式下缺 horaerpg 时触发。
- * 使用上下文增强的 analyzeMessageWithAI 进行完整分析（含轻量状态 + 上一条 USER 行动 + 角色身份），
- * 并通过 mergeParsedToMeta 写回所有已提取字段。
- * 只在「最后一条是USER消息」时触发，避免干扰 regenerate/swipe。
- */
-async function _autoFillPreviousAiTimelineBeforeInjection(chat) {
-    if (!settings.autoFillPrevTimelineOnSend) return;
-    if (settings.sendTimeline === false) return;
-    if (!Array.isArray(chat) || chat.length < 2) return;
+function _hasAutoFillRequiredData(meta, rpgOutputActive = _isRpgOutputActive(), rpgPayload = meta?._rpgChanges) {
+    const hasTimeAndEvent = _hasTimeAndTimeline(meta);
+    const hasRpgChanges = _rpgPayloadHasContent(rpgPayload);
+    return hasTimeAndEvent && (!rpgOutputActive || hasRpgChanges);
+}
+
+function _autoFillPreviousAiNeedsWork(meta, rpgOutputActive = _isRpgOutputActive(), rpgPayload = meta?._rpgChanges) {
+    return !_hasAutoFillRequiredData(meta, rpgOutputActive, rpgPayload);
+}
+
+function _messageTextHasAutoFillRequiredData(sourceText, rpgOutputActive = _isRpgOutputActive()) {
+    if (!sourceText) return false;
+
+    let parsed = horaeManager.parseHoraeTag(sourceText);
+    if (!parsed) {
+        parsed = horaeManager.parseLooseFormat(sourceText);
+    }
+    if (!parsed) return false;
+
+    return _hasAutoFillRequiredData(parsed, rpgOutputActive, parsed?.rpg);
+}
+
+function _findOlderAiMissingAutoFillDataBeforeTrailingUser(chat) {
+    const previousAiIndex = _findPreviousAiIndexBeforeCurrentUser(chat);
+    if (previousAiIndex <= 0) return [];
+
+    const missingIndices = [];
+    const rpgOutputActive = _isRpgOutputActive();
+
+    for (let i = 0; i < previousAiIndex; i++) {
+        const msg = chat[i];
+        if (!msg || msg.is_user) continue;
+        if (msg.horae_meta?._skipHorae) continue;
+
+        const sourceText = typeof msg?.mes === 'string' ? msg.mes.trim() : '';
+        if (!sourceText) continue;
+
+        const meta = horaeManager.getMessageMeta(i) || msg.horae_meta || null;
+        if (!_autoFillPreviousAiNeedsWork(meta, rpgOutputActive)) continue;
+        if (_messageTextHasAutoFillRequiredData(sourceText, rpgOutputActive)) continue;
+
+        missingIndices.push(i);
+    }
+
+    return missingIndices;
+}
+
+function _formatAutoFillBlockedFloorSummary(missingIndices, maxVisible = 5) {
+    const uniqueSorted = [...new Set((missingIndices || []).filter(idx => Number.isInteger(idx) && idx >= 0))]
+        .sort((a, b) => a - b);
+    const visible = uniqueSorted.slice(0, maxVisible);
+    const separator = isZhLocale() ? '、' : ', ';
+    const floorsText = visible.map(idx => `#${idx}`).join(separator) || '#?';
+    const extraCount = Math.max(0, uniqueSorted.length - visible.length);
+    const moreText = extraCount > 0 ? t('toast.autoFillBlockNoticeMore', { n: extraCount }) : '';
+
+    return { floorsText, moreText };
+}
+
+function _buildAutoFillBlockNoticeText(missingIndices) {
+    const { floorsText, moreText } = _formatAutoFillBlockedFloorSummary(missingIndices);
+    return t('toast.autoFillBlockNotice', { floors: floorsText, more: moreText });
+}
+
+async function _insertAutoFillBlockedNotice(missingIndices) {
+    const ctx = getContext();
+    const exec = await getSlashCommandExecutor();
+    const speakerName = getCurrentCharacterCardName() || 'Assistant';
+    const noticeText = _buildAutoFillBlockNoticeText(missingIndices);
+
+    // 延后一拍，避免在本轮生成中止的同一个调用栈里插楼层导致竞态。
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await exec(`/sendas name=${JSON.stringify(speakerName)} ${JSON.stringify(noticeText)}`);
+
+    const chat = horaeManager.getChat();
+    const noticeIndex = Array.isArray(chat) ? (chat.length - 1) : -1;
+    const noticeMsg = noticeIndex >= 0 ? chat[noticeIndex] : null;
+    if (!noticeMsg || noticeMsg.is_user) return noticeIndex;
+
+    if (!noticeMsg.horae_meta) noticeMsg.horae_meta = createEmptyMeta();
+    noticeMsg.horae_meta._skipHorae = true;
+
+    try {
+        const messageEl = document.querySelector(`.mes[mesid="${noticeIndex}"]`);
+        const oldPanel = messageEl?.querySelector('.horae-message-panel');
+        if (oldPanel) oldPanel.remove();
+    } catch (err) {
+        console.warn(`[Horae] 拦截提醒楼层面板移除失败 #${noticeIndex}:`, err);
+    }
+
+    try {
+        await ctx?.saveChat?.();
+    } catch (err) {
+        console.warn('[Horae] 拦截提醒楼层保存失败:', err);
+    }
+
+    return noticeIndex;
+}
+
+function _resolveAutoFillPreviousAiTarget(chat) {
+    if (!Array.isArray(chat) || chat.length < 2) return null;
 
     const lastIndex = chat.length - 1;
     const lastMsg = chat[lastIndex];
-    if (!lastMsg?.is_user) return;
+    if (!lastMsg?.is_user) return null;
 
     let targetIndex = -1;
     for (let i = lastIndex - 1; i >= 0; i--) {
@@ -19801,28 +19952,32 @@ async function _autoFillPreviousAiTimelineBeforeInjection(chat) {
         break;
     }
 
-    if (targetIndex < 0) return;
+    if (targetIndex < 0) return null;
 
     const targetMsg = chat[targetIndex];
-    const existingMeta = horaeManager.getMessageMeta(targetIndex) || createEmptyMeta();
-    const existingEvents = Array.isArray(existingMeta.events)
-        ? existingMeta.events
-        : (existingMeta.event ? [existingMeta.event] : []);
-    const hasTimeline = existingEvents.some(evt => evt?.summary && String(evt.summary).trim());
-    const hasTimeAndEvent = _hasStoryTimestamp(existingMeta) && hasTimeline;
-    const rpgOutputActive = _isRpgOutputActive();
-    const hasRpgChanges = _rpgPayloadHasContent(existingMeta?._rpgChanges);
-    if (hasTimeAndEvent && (!rpgOutputActive || hasRpgChanges)) return;
-
     const sourceText = typeof targetMsg?.mes === 'string' ? targetMsg.mes.trim() : '';
-    if (!sourceText) return;
+    if (!sourceText) return null;
 
     const cleanedTargetText = _stripHoraeReplyTags(_stripConfiguredTags(sourceText)).trim();
-    const targetTextForAnalysis = cleanedTargetText || sourceText;
+    return {
+        targetIndex,
+        sourceText,
+        targetTextForAnalysis: cleanedTargetText || sourceText,
+        rpgOutputActive: _isRpgOutputActive(),
+    };
+}
 
-    console.log(`[Horae] 前置补全：检测到上一条AI楼层 #${targetIndex} 缺少时间线或RPG数据，尝试上下文增强分析`);
-    showToast(t('toast.autoFillPrevTimelineStart', { id: targetIndex }), 'info');
-    const autoFillFailedToast = '补全失败,请手动重试';
+async function _attemptAutoFillPreviousAiTimeline(target, { allowSaveOnlyIfAlreadyFilled = false } = {}) {
+    const { targetIndex, sourceText, targetTextForAnalysis, rpgOutputActive } = target;
+    const existingMeta = horaeManager.getMessageMeta(targetIndex) || createEmptyMeta();
+
+    if (!_autoFillPreviousAiNeedsWork(existingMeta, rpgOutputActive)) {
+        if (allowSaveOnlyIfAlreadyFilled) {
+            await getContext().saveChat();
+            console.log(`[Horae] 前置补全重试：#${targetIndex} 数据已写入内存，补做保存成功`);
+        }
+        return targetIndex;
+    }
 
     let parsed = horaeManager.parseHoraeTag(sourceText);
     if (!parsed) {
@@ -19833,22 +19988,15 @@ async function _autoFillPreviousAiTimelineBeforeInjection(chat) {
         : [];
     const parsedHasRpg = _rpgPayloadHasContent(parsed?.rpg);
     if (!parsed || parsedEvents.length === 0 || (rpgOutputActive && !parsedHasRpg)) {
-        try {
-            parsed = await analyzeMessageWithAI(targetTextForAnalysis, {
-                messageIndex: targetIndex,
-                noVectorRecallMarker: true,
-                noTimelineInjectionMarker: true,
-                noSystemPromptInjectionMarker: true,
-            });
-        } catch (err) {
-            console.warn(`[Horae] 前置补全失败 #${targetIndex}:`, err);
-            showToast(autoFillFailedToast, 'error');
-            return;
-        }
+        parsed = await analyzeMessageWithAI(targetTextForAnalysis, {
+            messageIndex: targetIndex,
+            noVectorRecallMarker: true,
+            noTimelineInjectionMarker: true,
+            noSystemPromptInjectionMarker: true,
+        });
     }
     if (!parsed) {
-        showToast(autoFillFailedToast, 'error');
-        return;
+        throw new Error('auto-fill analysis returned empty result');
     }
 
     const mergedMeta = horaeManager.mergeParsedToMeta(existingMeta, parsed);
@@ -19856,9 +20004,7 @@ async function _autoFillPreviousAiTimelineBeforeInjection(chat) {
         ? mergedMeta.events.filter(evt => evt?.summary && String(evt.summary).trim())
         : [];
     if (mergedEvents.length === 0) {
-        console.log(`[Horae] 前置补全跳过：#${targetIndex} 未提取到有效事件摘要`);
-        showToast(autoFillFailedToast, 'error');
-        return;
+        throw new Error('auto-fill produced no valid event summary');
     }
 
     if (parsed.deletedAgenda?.length > 0) {
@@ -19879,17 +20025,56 @@ async function _autoFillPreviousAiTimelineBeforeInjection(chat) {
         console.warn(`[Horae] 前置补全面板刷新失败 #${targetIndex}:`, err);
     }
 
-    try {
-        await getContext().saveChat();
-    } catch (err) {
-        console.warn('[Horae] 前置补全保存失败:', err);
-        showToast(autoFillFailedToast, 'error');
-        return;
-    }
+    await getContext().saveChat();
 
     console.log(`[Horae] 前置补全完成：已写回上一条AI楼层 #${targetIndex} 的完整解析结果`);
-    // showToast(t('toast.autoFillPrevTimelineDone', { id: targetIndex }), 'success');
     return targetIndex;
+}
+
+/**
+ * 发送前补齐上一条AI楼层：缺 horae/horaeevent，或 RPG 模式下缺 horaerpg 时触发。
+ * 使用上下文增强的 analyzeMessageWithAI 进行完整分析（含轻量状态 + 上一条 USER 行动 + 角色身份），
+ * 并通过 mergeParsedToMeta 写回所有已提取字段。
+ * 只在「最后一条是USER消息」时触发，避免干扰 regenerate/swipe。
+ */
+async function _autoFillPreviousAiTimelineBeforeInjection(chat) {
+    if (!settings.autoFillPrevTimelineOnSend) return;
+    if (settings.sendTimeline === false) return;
+    const target = _resolveAutoFillPreviousAiTarget(chat);
+    if (!target) return;
+
+    const currentMeta = horaeManager.getMessageMeta(target.targetIndex) || createEmptyMeta();
+    if (!_autoFillPreviousAiNeedsWork(currentMeta, target.rpgOutputActive)) return;
+
+    console.log(`[Horae] 前置补全：检测到上一条AI楼层 #${target.targetIndex} 缺少时间线或RPG数据，尝试上下文增强分析`);
+    showToast(t('toast.autoFillPrevTimelineStart', { id: target.targetIndex }), 'info');
+    const autoFillFailedToast = '补全失败,请手动重试';
+    const maxAttempts = settings.autoFillRetryOnFailure ? 2 : 1;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const autoFilledIndex = await _attemptAutoFillPreviousAiTimeline(target, {
+                allowSaveOnlyIfAlreadyFilled: attempt > 1,
+            });
+            if (attempt > 1) {
+                console.log(`[Horae] 前置补全重试成功：#${target.targetIndex} 第 ${attempt} 次尝试完成`);
+            }
+            // showToast(t('toast.autoFillPrevTimelineDone', { id: target.targetIndex }), 'success');
+            return autoFilledIndex;
+        } catch (err) {
+            lastError = err;
+            if (attempt < maxAttempts) {
+                console.warn(`[Horae] 前置补全失败 #${target.targetIndex}，准备自动重试（第 ${attempt + 1} 次）:`, err);
+                await new Promise(resolve => setTimeout(resolve, 300));
+                continue;
+            }
+        }
+    }
+
+    console.warn(`[Horae] 前置补全失败 #${target.targetIndex}:`, lastError);
+    showToast(autoFillFailedToast, 'error');
+    return;
 }
 
 // ============================================
@@ -20926,6 +21111,31 @@ async function onPromptReady(eventData) {
 
     try {
         const chat = horaeManager.getChat();
+        if (settings.autoFillBlockGenerationOnFailure) {
+            const missingOldAiFloors = _findOlderAiMissingAutoFillDataBeforeTrailingUser(chat);
+            if (missingOldAiFloors.length > 0) {
+                const { floorsText, moreText } = _formatAutoFillBlockedFloorSummary(missingOldAiFloors);
+                try {
+                    getContext()?.stopGeneration?.();
+                } catch (_) {
+                    try { eventSource.emit(event_types.GENERATION_STOPPED); } catch (_) { }
+                }
+
+                showToast(t('toast.autoFillBlockedByMissingHistory', {
+                    floors: floorsText,
+                    more: moreText,
+                }), 'warning');
+
+                try {
+                    await _insertAutoFillBlockedNotice(missingOldAiFloors);
+                } catch (err) {
+                    console.warn('[Horae] 拦截提醒楼层插入失败:', err);
+                    showToast(t('toast.autoFillBlockNoticeFailed', { error: err?.message || 'unknown' }), 'error');
+                }
+                return;
+            }
+        }
+
         const earlySkipLast = _resolvePromptReadySkipLast(chat);
         const earlyPromptVisibility = _buildPromptVisibilityContext(chat, earlySkipLast);
         const vectorRecallPromise = _runVectorRecallBeforePromptReady(
