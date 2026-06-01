@@ -3594,6 +3594,18 @@ function resolveLatestItemEntry(itemName, state = horaeManager.getLatestState())
     return matchName ? { name: matchName, info: items[matchName] } : null;
 }
 
+function normalizeItemImportance(value) {
+    const raw = String(value || '').trim();
+    const lower = raw.toLowerCase();
+    if (raw === '!!' || raw === '关键' || raw === '關鍵' || lower === 'critical' || lower === 'key') {
+        return 'critical';
+    }
+    if (raw === '!' || raw === '重要' || lower === 'important') {
+        return 'important';
+    }
+    return 'normal';
+}
+
 /**
  * 更新物品页面显示
  */
@@ -3643,7 +3655,8 @@ function updateItemsDisplay() {
 
     // 筛选物品 - 按重要程度
     if (filterValue !== 'all') {
-        entries = entries.filter(([name, info]) => info.importance === filterValue);
+        const expectedImportance = normalizeItemImportance(filterValue);
+        entries = entries.filter(([name, info]) => normalizeItemImportance(info.importance) === expectedImportance);
     }
 
     // 筛选物品 - 按持有人
@@ -3669,11 +3682,9 @@ function updateItemsDisplay() {
         const icon = info.icon || '📦';
         const nameHtml = escapeHtml(name);
         const iconHtml = escapeHtml(icon);
-        const importance = info.importance || '';
-        const isCritical = importance === '!!' || importance === '关键' || importance === '關鍵' || importance === 'critical';
-        const isImportant = importance === '!' || importance === '重要' || importance === 'important';
-        const importanceClass = isCritical ? 'critical' : isImportant ? 'important' : 'normal';
-        const importanceLabel = isCritical ? t('levels.critical') : isImportant ? t('levels.important') : '';
+        const importance = normalizeItemImportance(info.importance);
+        const importanceClass = importance;
+        const importanceLabel = importance === 'critical' ? t('levels.critical') : importance === 'important' ? t('levels.important') : '';
         const importanceBadge = importanceLabel ? `<span class="horae-item-importance ${importanceClass}">${escapeHtml(importanceLabel)}</span>` : '';
         const holderHtml = escapeHtml(info.holder || '');
         const locationHtml = escapeHtml(info.location || '');
