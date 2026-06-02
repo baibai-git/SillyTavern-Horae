@@ -9,9 +9,9 @@
         <div class="drawer-header">
             <div class="horae-title" data-i18n="plugin.name">
                 <i class="fa-regular fa-clock"></i>
-                Horae 时光记忆
+                柏宝书
             </div>
-            <span class="horae-version">1.14.9B</span>
+            <span class="horae-version">1.15B</span>
         </div>
 
         <!-- 标签页导航 -->
@@ -137,7 +137,8 @@
                 </div>
 
                 <!-- 新增：无有效数据楼层号展示区（移动至悬念簿下方，事件时间线上面） -->
-                <div id="horae-empty-floors-container" class="horae-empty-floors-container" style="display: none; margin-bottom: 12px;">
+                <div id="horae-empty-floors-container" class="horae-empty-floors-container"
+                    style="display: none; margin-bottom: 12px;">
                     <div class="horae-empty-floors-header">
                         <i class="fa-solid fa-triangle-exclamation"></i>
                         <span>无有效数据楼层</span>
@@ -674,7 +675,8 @@
                                 发送时自动补全上一条 AI 消息时间线
                             </label>
                             <span class="horae-setting-hint" data-i18n="settings.autoFillPrevTimelineOnSendHint">
-                                发送前若上一条 AI 回复缺少 &lt;horae&gt;/&lt;horaeevent&gt;，会使用该楼层之前的轻量状态、角色身份和上一条用户行动作为参考，对该楼层进行完整 AI 分析并写回历史。此功能会调用 AI，默认开启。
+                                发送前若上一条 AI 回复缺少 &lt;horae&gt;/&lt;horaeevent&gt;，会使用该楼层之前的轻量状态、角色身份和上一条用户行动作为参考，对该楼层进行完整
+                                AI 分析并写回历史。此功能会调用 AI，默认开启。
                             </span>
                         </div>
 
@@ -863,65 +865,115 @@
                             <i class="fa-solid fa-circle-info"></i>
                             这里配置副API的地址、密钥和模型，用于总结/补全等副任务。
                         </span>
-                        <div id="horae-auto-summary-api-options">
-                            <div class="horae-setting-item">
-                                <label data-i18n="settings.summaryApiUrl">API 地址</label>
-                                <input type="text" id="horae-setting-auto-summary-api-url" class="horae-edit-field"
-                                    placeholder="https://api.openai.com/v1">
-                                <span class="horae-setting-sub-hint" data-i18n="settings.summaryApiUrlHint">OpenAI
-                                    兼容端点基础地址，如 https://api.openai.com/v1</span>
+                        <div id="horae-auto-summary-api-options" class="horae-sub-api-panel">
+                            <div class="horae-sub-api-group">
+                                <div class="horae-setting-description" data-i18n="settings.subApiAssignmentsTitle">
+                                    功能 API 分配（选择各功能所使用的 API）
+                                </div>
+                                <div class="horae-sub-api-assignments">
+                                    <div class="horae-setting-item horae-sub-api-assignment-row">
+                                        <label for="horae-setting-sub-api-channel-auto-summary"
+                                            data-i18n="settings.subApiScopeAutoSummary">自动总结</label>
+                                        <select id="horae-setting-sub-api-channel-auto-summary"
+                                            class="horae-edit-field horae-sub-api-route-select"></select>
+                                    </div>
+                                    <div class="horae-setting-item horae-sub-api-assignment-row">
+                                        <label for="horae-setting-sub-api-channel-manual-summary"
+                                            data-i18n="settings.subApiScopeManualSummary">手动总结</label>
+                                        <select id="horae-setting-sub-api-channel-manual-summary"
+                                            class="horae-edit-field horae-sub-api-route-select"></select>
+                                    </div>
+                                    <div class="horae-setting-item horae-sub-api-assignment-row">
+                                        <label for="horae-setting-sub-api-channel-brief"
+                                            data-i18n="settings.subApiScopeBrief">AI分析 / 摘要</label>
+                                        <select id="horae-setting-sub-api-channel-brief"
+                                            class="horae-edit-field horae-sub-api-route-select"></select>
+                                    </div>
+                                </div>
+                                <span class="horae-setting-sub-hint" data-i18n="settings.subApiScopeBriefHint">
+                                    开启摘要使用副API后，“自动补全上一消息”会同步开启，格式提示词将不会在发送新消息时注入，因此摘要不会跟着正文一起输出，而是在发新消息时使用副API补全，手动点击楼层界面中的AI分析一样会使用副API
+                                </span>
                             </div>
-                            <div class="horae-setting-item">
-                                <label data-i18n="settings.summaryApiKey">API 密钥</label>
-                                <div style="display:flex; gap:4px; align-items:center;">
-                                    <input type="password" id="horae-setting-auto-summary-api-key"
-                                        class="horae-edit-field" placeholder="sk-..." style="flex:1; min-width:0;">
-                                    <button id="horae-setting-auto-summary-api-key-toggle" class="horae-btn"
-                                        type="button" title="显示/隐藏密钥" style="white-space:nowrap; padding:4px 8px;">
-                                        <i class="fa-solid fa-eye"></i>
+
+                            <hr class="horae-sub-api-divider">
+
+                            <div class="horae-sub-api-group">
+                                <div class="horae-setting-description" data-i18n="settings.subApiEditorTitle">
+                                    添加 / 编辑 API
+                                </div>
+                                <div class="horae-form-group">
+                                    <label for="horae-setting-sub-api-name" data-i18n="settings.subApiName">API
+                                        名称</label>
+                                    <input type="text" id="horae-setting-sub-api-name" class="horae-edit-field"
+                                        data-i18n-placeholder="settings.subApiNamePlaceholder" placeholder="例如: OpenAI">
+                                </div>
+                                <div class="horae-form-group">
+                                    <label for="horae-setting-auto-summary-api-url"
+                                        data-i18n="settings.summaryApiUrl">API 地址</label>
+                                    <input type="text" id="horae-setting-auto-summary-api-url" class="horae-edit-field"
+                                        placeholder="https://api.openai.com/v1">
+                                    <span class="horae-setting-sub-hint" data-i18n="settings.summaryApiUrlHint">OpenAI
+                                        兼容端点基础地址，如 https://api.openai.com/v1</span>
+                                </div>
+                                <div class="horae-form-group">
+                                    <label for="horae-setting-auto-summary-api-key"
+                                        data-i18n="settings.summaryApiKey">API 密钥</label>
+                                    <div class="horae-sub-api-key-row">
+                                        <input type="password" id="horae-setting-auto-summary-api-key"
+                                            class="horae-edit-field" placeholder="sk-...">
+                                        <button id="horae-setting-auto-summary-api-key-toggle" class="horae-btn"
+                                            type="button" data-i18n-title="tooltip.toggleSecret" title="显示/隐藏密钥">
+                                            <i class="fa-solid fa-eye"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="horae-form-group">
+                                    <label for="horae-setting-auto-summary-model"
+                                        data-i18n="settings.summaryModel">模型</label>
+                                    <div class="horae-sub-api-model-row">
+                                        <select id="horae-setting-auto-summary-model" class="horae-edit-field">
+                                            <option value="" data-i18n="settings.subApiFetchFirst">-- 请先拉取模型列表 --
+                                            </option>
+                                        </select>
+                                        <button id="horae-btn-fetch-models" type="button" class="horae-btn"
+                                            data-i18n-title="tooltip.fetchModels" title="">
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                            <span data-i18n="common.fetchModels">拉取模型</span>
+                                        </button>
+                                    </div>
+                                    <label class="horae-sub-api-stream-row">
+                                        <input type="checkbox" id="horae-setting-summary-should-stream">
+                                        <span data-i18n="settings.summaryShouldStream">流式传输</span>
+                                    </label>
+                                    <span class="horae-setting-sub-hint"
+                                        data-i18n="settings.summaryFetchModelsHint">填好地址和密钥后点击拉取可用模型列表</span>
+                                </div>
+                                <div class="horae-sub-api-form-actions">
+                                    <button id="horae-btn-test-sub-api" type="button" class="horae-btn">
+                                        <i class="fa-solid fa-plug-circle-check"></i>
+                                        <span data-i18n="settings.testSubApi">测试副 API</span>
+                                    </button>
+                                    <button id="horae-btn-cancel-sub-api-edit" type="button" class="horae-btn"
+                                        style="display: none;">
+                                        <i class="fa-solid fa-xmark"></i>
+                                        <span data-i18n="common.cancel">取消</span>
+                                    </button>
+                                    <button id="horae-btn-save-sub-api" type="button" class="horae-btn primary">
+                                        <i class="fa-solid fa-plus"></i>
+                                        <span id="horae-btn-save-sub-api-text" data-i18n="settings.subApiSaveAdd">保存 /
+                                            添加 API</span>
                                     </button>
                                 </div>
                             </div>
-                            <div class="horae-setting-item">
-                                <label data-i18n="settings.summaryModel">模型</label>
-                                <div style="display:flex; gap:4px; align-items:center;">
-                                    <select id="horae-setting-auto-summary-model" class="horae-edit-field"
-                                        style="flex:1; min-width:0;">
-                                        <option value="">-- 请先拉取模型列表 --</option>
-                                    </select>
-                                    <button id="horae-btn-fetch-models" class="horae-btn"
-                                        style="white-space:nowrap; padding:4px 8px;"
-                                        data-i18n-title="tooltip.fetchModels" title="">
-                                        <i class="fa-solid fa-arrows-rotate"></i>
-                                    </button>
+
+                            <hr class="horae-sub-api-divider">
+
+                            <div class="horae-sub-api-group">
+                                <div class="horae-setting-description" data-i18n="settings.subApiListTitle">
+                                    已添加的 API 列表
                                 </div>
-                                <label style="display:block; margin-top:6px;">
-                                    <input type="checkbox" id="horae-setting-summary-should-stream">
-                                    <span data-i18n="settings.summaryShouldStream">流式传输</span>
-                                </label>
-                                <span class="horae-setting-sub-hint"
-                                    data-i18n="settings.summaryFetchModelsHint">填好地址和密钥后点击 <i
-                                        class="fa-solid fa-arrows-rotate"></i> 拉取。低成本模型即可。</span>
-                            </div>
-                            <div class="horae-setting-item">
-                                <label data-i18n="settings.subApiScope">应用范围</label>
-                                <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
-                                    <label>
-                                        <input type="checkbox" id="horae-setting-sub-api-scope-auto-summary">
-                                        <span data-i18n="settings.subApiScopeAutoSummary">自动总结</span>
-                                    </label>
-                                    <label>
-                                        <input type="checkbox" id="horae-setting-sub-api-scope-manual-summary">
-                                        <span data-i18n="settings.subApiScopeManualSummary">手动总结</span>
-                                    </label>
-                                    <label>
-                                        <input type="checkbox" id="horae-setting-sub-api-scope-brief">
-                                        <span data-i18n="settings.subApiScopeBrief">摘要</span>
-                                    </label>
-                                    <span class="horae-setting-sub-hint" data-i18n="settings.subApiScopeBriefHint"
-                                        style="margin-left: 22px;">
-                                        开启摘要使用副API后，“自动补全上一消息”会同步开启，格式提示词将不会在发送新消息时注入，因此摘要不会跟着正文一起输出，而是在发新消息时使用副API补全，手动点击楼层界面中的AI分析一样会使用副API
-                                    </span>
+                                <div id="horae-sub-api-list" class="horae-api-list">
+                                    <div class="horae-empty-hint" data-i18n="settings.subApiEmpty">暂无副API渠道</div>
                                 </div>
                             </div>
                         </div>
@@ -1985,7 +2037,9 @@
                 </div>
 
                 <div class="horae-about">
-                    <p>Horae v1.14.9B | 作者: SenriYuki，柏柏</p>
+                    <p>柏宝书 v1.15B | 作者: 柏柏</p>
+                    <p style="font-size: 11px; opacity: 0.7; margin-top: -4px;">（基于 SenriYuki 开发的 Horae 时光记忆进行二次开发与功能增强）
+                    </p>
                     <p>基于时间锚点的AI记忆增强系统</p>
                 </div>
             </div>

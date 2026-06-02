@@ -1,12 +1,12 @@
 {
-    "display_name": "Horae - 时光记忆",
+    "display_name": "柏宝书",
     "loading_order": 100,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "assets/styles/style.css",
-    "author": "SenriYuki，柏柏",
-    "version": "1.14.9B",
+    "author": "柏柏",
+    "version": "1.15B",
     "homePage": "",
     "auto_update": false
 }

@@ -1,9 +1,10 @@
 ﻿/**
- * Horae - 时光记忆插件 
+ * 柏宝书 - SillyTavern 记忆增强插件
  * 基于时间锚点的AI记忆增强系统
- * 
- * 作者: SenriYuki，柏柏
- * 版本: 1.14.9B
+ *
+ * 作者: 柏柏
+ * 基于 SenriYuki 开发的 Horae 时光记忆进行功能增强与重构
+ * 版本: 1.15B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -17,7 +18,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.14.9B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15B';
 
 // ============================================
 // 常量定义
@@ -25,7 +26,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.14.9B';
+const VERSION = '1.15B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -174,6 +175,32 @@ const HORAE_REGEX_RULES = [
 // ============================================
 // 默认设置
 // ============================================
+const SUB_API_MAIN_CHANNEL_ID = 'default';
+const SUB_API_LEGACY_CHANNEL_ID = 'legacy-sub-api';
+const SUB_API_TASK_CONFIGS = [
+    {
+        taskType: 'autoSummary',
+        assignmentKey: 'autoSummary',
+        scopeKey: 'subApiScopeAutoSummary',
+        selectId: 'horae-setting-sub-api-channel-auto-summary',
+        labelKey: 'settings.subApiScopeAutoSummary',
+    },
+    {
+        taskType: 'manualSummary',
+        assignmentKey: 'manualSummary',
+        scopeKey: 'subApiScopeManualSummary',
+        selectId: 'horae-setting-sub-api-channel-manual-summary',
+        labelKey: 'settings.subApiScopeManualSummary',
+    },
+    {
+        taskType: 'brief',
+        assignmentKey: 'brief',
+        scopeKey: 'subApiScopeBrief',
+        selectId: 'horae-setting-sub-api-channel-brief',
+        labelKey: 'settings.subApiScopeBrief',
+    },
+];
+
 const DEFAULT_SETTINGS = {
     uiLanguage: 'auto',
     aiOutputLanguage: 'auto',
@@ -245,10 +272,17 @@ const DEFAULT_SETTINGS = {
     autoSummaryApiUrl: '',          // 独立API端点地址（OpenAI兼容）
     autoSummaryApiKey: '',          // 独立API密钥
     autoSummaryModel: '',           // 独立API模型名称
+    subApiChannels: [],             // 多副API渠道 [{ id, name, url, key, model, models }]
+    subApiAssignments: {            // 各副任务选择的渠道；default = 使用主API
+        autoSummary: 'default',
+        manualSummary: 'default',
+        brief: 'default',
+    },
+    _subApiLegacyMigrated: false,    // 旧单副API字段是否已迁移到多渠道结构
     summaryShouldStream: false,      // 总结/补全生成是否使用流式传输
     subApiScopeAutoSummary: false,   // 副API应用范围：自动总结
     subApiScopeManualSummary: false, // 副API应用范围：手动总结（时间线压缩）
-    subApiScopeBrief: false,        // 副API应用范围：摘要（预留）
+    subApiScopeBrief: false,        // 副API应用范围：AI分析/摘要
     antiParaphraseMode: false,      // 反转述模式：AI回复时结算上一条USER的内容
     sideplayMode: false,            // 番外/小剧场模式：启用后可标记消息跳过Horae
     // RPG 模式
@@ -341,6 +375,7 @@ let _autoSummaryRanThisTurn = false;
 let _vectorEnsureIndexPromise = null;
 let _vectorEnsureIndexChatId = null;
 let _vectorDeferredIndexKeys = new Set();
+let _subApiEditingChannelId = null;
 let _lastChatMessageRefs = [];
 let itemsMultiSelectMode = false;  // 物品多选模式
 let selectedItems = new Set();     // 选中的物品名称
@@ -1008,6 +1043,327 @@ function isHoraeEnabledForCurrentChat() {
     return !!settings.enabled && !isCurrentChatExcludedFromHorae();
 }
 
+function _createSubApiChannelId() {
+    return `subapi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function _getSubApiTaskConfig(taskType = '') {
+    return SUB_API_TASK_CONFIGS.find(cfg => cfg.taskType === taskType) || SUB_API_TASK_CONFIGS[0];
+}
+
+function _normalizeSubApiChannel(raw, index = 0) {
+    if (!raw || typeof raw !== 'object') return null;
+    const url = String(raw.url ?? raw.apiUrl ?? raw.baseUrl ?? '').trim();
+    const key = String(raw.key ?? raw.apiKey ?? '').trim();
+    const model = String(raw.model ?? '').trim();
+    const models = Array.isArray(raw.models)
+        ? [...new Set(raw.models.map(m => String(m || '').trim()).filter(Boolean))]
+        : [];
+    const fallbackName = model || url || `副API ${index + 1}`;
+    return {
+        id: String(raw.id || `subapi-${index + 1}`).trim(),
+        name: String(raw.name || fallbackName).trim(),
+        url,
+        key,
+        model,
+        models,
+    };
+}
+
+function _getSubApiChannels() {
+    if (!Array.isArray(settings.subApiChannels)) settings.subApiChannels = [];
+    settings.subApiChannels = settings.subApiChannels
+        .map(_normalizeSubApiChannel)
+        .filter(Boolean);
+    return settings.subApiChannels;
+}
+
+function _findSubApiChannel(channelId) {
+    const id = String(channelId || '').trim();
+    if (!id || id === SUB_API_MAIN_CHANNEL_ID) return null;
+    return _getSubApiChannels().find(channel => channel.id === id) || null;
+}
+
+function _syncSubApiScopeFlagsFromAssignments() {
+    const assignments = settings.subApiAssignments || {};
+    for (const cfg of SUB_API_TASK_CONFIGS) {
+        settings[cfg.scopeKey] = !!assignments[cfg.assignmentKey]
+            && assignments[cfg.assignmentKey] !== SUB_API_MAIN_CHANNEL_ID;
+    }
+}
+
+function _syncLegacySubApiFieldsFromChannel(channel) {
+    if (!channel) return false;
+    let changed = false;
+    if (settings.autoSummaryApiUrl !== channel.url) {
+        settings.autoSummaryApiUrl = channel.url;
+        changed = true;
+    }
+    if (settings.autoSummaryApiKey !== channel.key) {
+        settings.autoSummaryApiKey = channel.key;
+        changed = true;
+    }
+    if (settings.autoSummaryModel !== channel.model) {
+        settings.autoSummaryModel = channel.model;
+        changed = true;
+    }
+    return changed;
+}
+
+function _getPreferredSubApiChannel() {
+    const assignments = settings.subApiAssignments || {};
+    for (const cfg of SUB_API_TASK_CONFIGS) {
+        const channel = _findSubApiChannel(assignments[cfg.assignmentKey]);
+        if (channel) return channel;
+    }
+    return _getSubApiChannels()[0] || null;
+}
+
+function _normalizeSubApiSettingsInPlace(saved = {}, options = {}) {
+    const shouldMigrateLegacyFields = options.migrateLegacy === true;
+    const before = JSON.stringify({
+        subApiChannels: settings.subApiChannels,
+        subApiAssignments: settings.subApiAssignments,
+        autoSummaryApiUrl: settings.autoSummaryApiUrl,
+        autoSummaryApiKey: settings.autoSummaryApiKey,
+        autoSummaryModel: settings.autoSummaryModel,
+        _subApiLegacyMigrated: settings._subApiLegacyMigrated,
+        subApiScopeAutoSummary: settings.subApiScopeAutoSummary,
+        subApiScopeManualSummary: settings.subApiScopeManualSummary,
+        subApiScopeBrief: settings.subApiScopeBrief,
+    });
+
+    const rawChannels = Array.isArray(settings.subApiChannels) ? settings.subApiChannels : [];
+    const seen = new Set();
+    const channels = [];
+    rawChannels.forEach((raw, index) => {
+        const channel = _normalizeSubApiChannel(raw, index);
+        if (!channel) return;
+        if (!channel.id || seen.has(channel.id)) channel.id = _createSubApiChannelId();
+        seen.add(channel.id);
+        channels.push(channel);
+    });
+
+    const legacyUrl = String(settings.autoSummaryApiUrl || saved.autoSummaryApiUrl || '').trim();
+    const legacyKey = String(settings.autoSummaryApiKey || saved.autoSummaryApiKey || '').trim();
+    const legacyModel = String(settings.autoSummaryModel || saved.autoSummaryModel || '').trim();
+    if (shouldMigrateLegacyFields && !settings._subApiLegacyMigrated && (legacyUrl || legacyKey || legacyModel) && !channels.some(channel =>
+        channel.id === SUB_API_LEGACY_CHANNEL_ID
+        || (channel.url === legacyUrl && channel.key === legacyKey && channel.model === legacyModel)
+    )) {
+        channels.push({
+            id: SUB_API_LEGACY_CHANNEL_ID,
+            name: '默认副API',
+            url: legacyUrl,
+            key: legacyKey,
+            model: legacyModel,
+            models: legacyModel ? [legacyModel] : [],
+        });
+    }
+    settings.subApiChannels = channels;
+
+    const rawAssignments = settings.subApiAssignments && typeof settings.subApiAssignments === 'object'
+        ? settings.subApiAssignments
+        : {};
+    const firstChannelId = channels[0]?.id || SUB_API_MAIN_CHANNEL_ID;
+    const nextAssignments = {};
+    for (const cfg of SUB_API_TASK_CONFIGS) {
+        let value = String(rawAssignments[cfg.assignmentKey] || '').trim();
+        const legacyEnabled = settings[cfg.scopeKey] === true || saved[cfg.scopeKey] === true;
+        if (!value && legacyEnabled && channels.length) value = firstChannelId;
+        if (value !== SUB_API_MAIN_CHANNEL_ID && !_findSubApiChannel(value)) value = SUB_API_MAIN_CHANNEL_ID;
+        nextAssignments[cfg.assignmentKey] = value || SUB_API_MAIN_CHANNEL_ID;
+    }
+    settings.subApiAssignments = nextAssignments;
+    _syncSubApiScopeFlagsFromAssignments();
+    if (shouldMigrateLegacyFields && !settings._subApiLegacyMigrated) {
+        settings._subApiLegacyMigrated = true;
+    }
+
+    const preferred = _getPreferredSubApiChannel();
+    if (preferred) _syncLegacySubApiFieldsFromChannel(preferred);
+
+    return before !== JSON.stringify({
+        subApiChannels: settings.subApiChannels,
+        subApiAssignments: settings.subApiAssignments,
+        autoSummaryApiUrl: settings.autoSummaryApiUrl,
+        autoSummaryApiKey: settings.autoSummaryApiKey,
+        autoSummaryModel: settings.autoSummaryModel,
+        _subApiLegacyMigrated: settings._subApiLegacyMigrated,
+        subApiScopeAutoSummary: settings.subApiScopeAutoSummary,
+        subApiScopeManualSummary: settings.subApiScopeManualSummary,
+        subApiScopeBrief: settings.subApiScopeBrief,
+    });
+}
+
+function _getSubApiConfigForTask(taskType = '') {
+    const cfg = _getSubApiTaskConfig(taskType);
+    const channel = _findSubApiChannel(settings.subApiAssignments?.[cfg.assignmentKey]);
+    if (!channel) return null;
+    return {
+        channel,
+        url: String(channel.url || '').trim(),
+        key: String(channel.key || '').trim(),
+        model: String(channel.model || '').trim(),
+    };
+}
+
+function _buildSubApiOptionHtml(selectedId = SUB_API_MAIN_CHANNEL_ID) {
+    const selected = String(selectedId || SUB_API_MAIN_CHANNEL_ID);
+    const mainLabel = t('settings.subApiMainApi') || '主 API (默认)';
+    const options = [`<option value="${SUB_API_MAIN_CHANNEL_ID}" ${selected === SUB_API_MAIN_CHANNEL_ID ? 'selected' : ''}>${escapeHtml(mainLabel)}</option>`];
+    for (const channel of _getSubApiChannels()) {
+        const label = channel.name || channel.model || channel.url || '副API';
+        options.push(`<option value="${escapeHtml(channel.id)}" ${selected === channel.id ? 'selected' : ''}>${escapeHtml(label)}</option>`);
+    }
+    return options.join('');
+}
+
+function _renderSubApiChannelSelects() {
+    for (const cfg of SUB_API_TASK_CONFIGS) {
+        const select = document.getElementById(cfg.selectId);
+        if (!select) continue;
+        const selected = settings.subApiAssignments?.[cfg.assignmentKey] || SUB_API_MAIN_CHANNEL_ID;
+        select.innerHTML = _buildSubApiOptionHtml(selected);
+    }
+}
+
+function _renderSubApiChannelList() {
+    const listEl = document.getElementById('horae-sub-api-list');
+    if (!listEl) return;
+    const channels = _getSubApiChannels();
+    if (!channels.length) {
+        listEl.innerHTML = `<div class="horae-empty-hint">${escapeHtml(t('settings.subApiEmpty') || '暂无副API渠道')}</div>`;
+        return;
+    }
+    const assignments = settings.subApiAssignments || {};
+    listEl.innerHTML = channels.map(channel => {
+        const assignedTasks = SUB_API_TASK_CONFIGS
+            .filter(cfg => assignments[cfg.assignmentKey] === channel.id)
+            .map(cfg => t(cfg.labelKey))
+            .filter(Boolean);
+        const assignedHtml = assignedTasks.length
+            ? `<div class="horae-api-tags">${assignedTasks.map(name => `<span>${escapeHtml(name)}</span>`).join('')}</div>`
+            : '';
+        return `
+            <div class="horae-api-item" data-channel-id="${escapeHtml(channel.id)}">
+                <div class="horae-api-info">
+                    <div class="horae-api-name">${escapeHtml(channel.name || '副API')}</div>
+                    <div class="horae-api-url">${escapeHtml(channel.url || '-')}</div>
+                    <div class="horae-api-model">${escapeHtml(channel.model || t('settings.subApiNoModel') || '未设置模型')}</div>
+                    ${assignedHtml}
+                </div>
+                <div class="horae-api-actions">
+                    <button type="button" class="horae-icon-btn horae-sub-api-edit" title="${escapeHtml(t('common.edit') || '编辑')}" aria-label="${escapeHtml(t('common.edit') || '编辑')}">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button type="button" class="horae-icon-btn danger horae-sub-api-delete" title="${escapeHtml(t('common.delete') || '删除')}" aria-label="${escapeHtml(t('common.delete') || '删除')}">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function _setSubApiFormChannel(channel = null) {
+    _subApiEditingChannelId = channel?.id || null;
+    $('#horae-setting-sub-api-name').val(channel?.name || '');
+    $('#horae-setting-auto-summary-api-url').val(channel?.url || '');
+    $('#horae-setting-auto-summary-api-key').val(channel?.key || '');
+    if (channel) {
+        _syncLegacySubApiFieldsFromChannel(channel);
+    } else {
+        settings.autoSummaryApiUrl = '';
+        settings.autoSummaryApiKey = '';
+        settings.autoSummaryModel = '';
+    }
+    const modelSel = document.getElementById('horae-setting-auto-summary-model');
+    if (modelSel) {
+        const models = Array.isArray(channel?.models) ? channel.models : [];
+        _populateModelSelect(modelSel, models, channel?.model || '');
+        if (!models.length && !channel?.model) {
+            modelSel.innerHTML = `<option value="">${escapeHtml(t('settings.subApiFetchFirst') || '-- 请先拉取模型列表 --')}</option>`;
+        }
+    }
+    const saveText = document.getElementById('horae-btn-save-sub-api-text');
+    if (saveText) saveText.textContent = channel ? (t('settings.subApiSaveEdit') || '保存 API') : (t('settings.subApiSaveAdd') || '保存 / 添加 API');
+    const saveIcon = document.querySelector('#horae-btn-save-sub-api i');
+    if (saveIcon) {
+        saveIcon.classList.toggle('fa-plus', !channel);
+        saveIcon.classList.toggle('fa-floppy-disk', !!channel);
+    }
+    $('#horae-btn-cancel-sub-api-edit').toggle(!!channel);
+}
+
+function _getSubApiFormData() {
+    return {
+        name: String($('#horae-setting-sub-api-name').val() || '').trim(),
+        url: String($('#horae-setting-auto-summary-api-url').val() || '').trim(),
+        key: String($('#horae-setting-auto-summary-api-key').val() || '').trim(),
+        model: String($('#horae-setting-auto-summary-model').val() || '').trim(),
+    };
+}
+
+function _saveSubApiFormChannel() {
+    const form = _getSubApiFormData();
+    if (!form.url || !form.key || !form.model) {
+        showToast(t('toast.subApiChannelRequired') || '请填写 API 地址、密钥和模型', 'warning');
+        return;
+    }
+    const channels = _getSubApiChannels();
+    const id = _subApiEditingChannelId || _createSubApiChannelId();
+    const existingIndex = channels.findIndex(channel => channel.id === id);
+    const existing = existingIndex >= 0 ? channels[existingIndex] : null;
+    const channel = {
+        id,
+        name: form.name || existing?.name || form.model || '副API',
+        url: form.url,
+        key: form.key,
+        model: form.model,
+        models: [...new Set([...(existing?.models || []), form.model].filter(Boolean))],
+    };
+    if (existingIndex >= 0) channels.splice(existingIndex, 1, channel);
+    else channels.push(channel);
+    settings.subApiChannels = channels;
+    _syncLegacySubApiFieldsFromChannel(channel);
+    _renderSubApiSettingsUi();
+    _setSubApiFormChannel(null);
+    saveSettings();
+    showToast(t('toast.subApiChannelSaved') || '副API渠道已保存', 'success');
+}
+
+function _deleteSubApiChannel(channelId) {
+    const channel = _findSubApiChannel(channelId);
+    if (!channel) return;
+    const channelName = channel.name || channel.model || channel.url || '副API';
+    if (!confirm(t('confirm.deleteSubApiChannel', { name: channelName }) || `删除副API渠道「${channelName}」？`)) return;
+    settings.subApiChannels = _getSubApiChannels().filter(item => item.id !== channel.id);
+    for (const cfg of SUB_API_TASK_CONFIGS) {
+        if (settings.subApiAssignments?.[cfg.assignmentKey] === channel.id) {
+            settings.subApiAssignments[cfg.assignmentKey] = SUB_API_MAIN_CHANNEL_ID;
+        }
+    }
+    _syncSubApiScopeFlagsFromAssignments();
+    if (_subApiEditingChannelId === channel.id) _setSubApiFormChannel(null);
+    const preferred = _getPreferredSubApiChannel();
+    if (preferred) {
+        _syncLegacySubApiFieldsFromChannel(preferred);
+    } else {
+        settings.autoSummaryApiUrl = '';
+        settings.autoSummaryApiKey = '';
+        settings.autoSummaryModel = '';
+    }
+    _renderSubApiSettingsUi();
+    saveSettings();
+}
+
+function _renderSubApiSettingsUi() {
+    _normalizeSubApiSettingsInPlace(settings);
+    _renderSubApiChannelSelects();
+    _renderSubApiChannelList();
+}
+
 function loadSettings() {
     let changed = false;
     const saved = extension_settings[EXTENSION_NAME] || null;
@@ -1034,7 +1390,7 @@ function loadSettings() {
         changed = true;
     }
     if (syncExcludedCharacterNamesInPlace()) changed = true;
-    if (_normalizeAutoSummarySettingsInPlace(saved || {}) || _normalizePromptSettingsInPlace() || _normalizeVectorRecallPresetsInPlace() || _normalizeVectorStripTagsInPlace(saved || {}) || _normalizeRpgSettingsInPlace()) changed = true;
+    if (_normalizeAutoSummarySettingsInPlace(saved || {}) || _normalizeSubApiSettingsInPlace(saved || {}, { migrateLegacy: true }) || _normalizePromptSettingsInPlace() || _normalizeVectorRecallPresetsInPlace() || _normalizeVectorStripTagsInPlace(saved || {}) || _normalizeRpgSettingsInPlace()) changed = true;
     if (_migrateLegacyVectorSettings(settings)) changed = true;
     // console.log(
     //     `[Horae][MainPersonality] loadSettings: saved=${saved?.sendMainCharacterPersonality} merged=${!!settings.sendMainCharacterPersonality} sendCharacters=${settings.sendCharacters !== false} pinnedNpcs=${JSON.stringify(settings.pinnedNpcs || [])}`
@@ -1060,6 +1416,7 @@ function _migrateAttrConfig() {
  */
 function saveSettings() {
     _normalizePromptTextFields(settings, PROMPT_SETTING_KEYS);
+    _normalizeSubApiSettingsInPlace(settings);
     extension_settings[EXTENSION_NAME] = settings;
     saveSettingsDebounced();
     eventSource.emit('horae:settingsChanged', { enabled: !!settings.enabled });
@@ -4327,7 +4684,7 @@ async function aiEnrichNpc(name, aliases = []) {
 
     let raw = '';
     try {
-        raw = await generateForSummary(prompt);
+        raw = await generateForSummary(prompt, { taskType: 'brief' });
     } catch (err) {
         throw new Error(t('toast.aiEnrichApiError', { error: err.message || String(err) }));
     }
@@ -12714,6 +13071,8 @@ function initSettingsEvents() {
         horaeManager.init(getContext(), settings);
         _refreshSystemPromptDisplay();
         applyI18nToDOM(document.getElementById('horae-drawer') || document);
+        _renderSubApiSettingsUi();
+        _setSubApiFormChannel(_subApiEditingChannelId ? _findSubApiChannel(_subApiEditingChannelId) : null);
         updateAutoSummaryHint();
         initTabs();
         refreshAllDisplays();
@@ -13865,11 +14224,9 @@ function initSettingsEvents() {
     });
     $('#horae-setting-auto-summary-api-url').on('input change', function () {
         settings.autoSummaryApiUrl = this.value;
-        saveSettings();
     });
     $('#horae-setting-auto-summary-api-key').on('input change', function () {
         settings.autoSummaryApiKey = this.value;
-        saveSettings();
     });
     $('#horae-setting-auto-summary-api-key-toggle').on('click', function () {
         const input = document.getElementById('horae-setting-auto-summary-api-key');
@@ -13884,30 +14241,41 @@ function initSettingsEvents() {
     });
     $('#horae-setting-auto-summary-model').on('change', function () {
         settings.autoSummaryModel = this.value;
-        saveSettings();
     });
     $('#horae-setting-summary-should-stream').on('change', function () {
         settings.summaryShouldStream = this.checked;
         saveSettings();
     });
-    $('#horae-setting-sub-api-scope-auto-summary').on('change', function () {
-        settings.subApiScopeAutoSummary = this.checked;
-        saveSettings();
-    });
-    $('#horae-setting-sub-api-scope-manual-summary').on('change', function () {
-        settings.subApiScopeManualSummary = this.checked;
-        saveSettings();
-    });
-    $('#horae-setting-sub-api-scope-brief').on('change', function () {
-        settings.subApiScopeBrief = this.checked;
-        if (this.checked) {
+    $('.horae-sub-api-route-select').on('change', function () {
+        const cfg = SUB_API_TASK_CONFIGS.find(item => item.selectId === this.id);
+        if (!cfg) return;
+        settings.subApiAssignments = settings.subApiAssignments || {};
+        settings.subApiAssignments[cfg.assignmentKey] = this.value || SUB_API_MAIN_CHANNEL_ID;
+        _syncSubApiScopeFlagsFromAssignments();
+        if (cfg.taskType === 'brief' && settings.subApiScopeBrief) {
             _ensureAutoFillPrevTimelineForSubApiBriefScope();
         }
+        const channel = _findSubApiChannel(this.value);
+        if (channel) _syncLegacySubApiFieldsFromChannel(channel);
+        _renderSubApiSettingsUi();
         saveSettings();
         updateTokenCounter();
     });
 
     $('#horae-btn-fetch-models').on('click', fetchAndPopulateModels);
+    $('#horae-btn-test-sub-api').on('click', testSubApiConnection);
+    $('#horae-btn-save-sub-api').on('click', _saveSubApiFormChannel);
+    $('#horae-btn-cancel-sub-api-edit').on('click', function () {
+        _setSubApiFormChannel(null);
+    });
+    $('#horae-sub-api-list').on('click', '.horae-sub-api-edit', function () {
+        const channelId = $(this).closest('.horae-api-item').data('channel-id');
+        _setSubApiFormChannel(_findSubApiChannel(channelId));
+    });
+    $('#horae-sub-api-list').on('click', '.horae-sub-api-delete', function () {
+        const channelId = $(this).closest('.horae-api-item').data('channel-id');
+        _deleteSubApiChannel(channelId);
+    });
 
     $('#horae-setting-panel-width').on('change', function () {
         let val = parseInt(this.value) || 100;
@@ -14862,23 +15230,9 @@ function syncSettingsToUI() {
     }
     $('#horae-setting-auto-summary-batch-msgs').val(settings.autoSummaryBatchMaxMsgs || 50);
     $('#horae-setting-auto-summary-batch-tokens').val(settings.autoSummaryBatchMaxTokens || 80000);
-    $('#horae-setting-auto-summary-api-url').val(settings.autoSummaryApiUrl || '');
-    $('#horae-setting-auto-summary-api-key').val(settings.autoSummaryApiKey || '');
     $('#horae-setting-summary-should-stream').prop('checked', settings.summaryShouldStream !== false);
-    $('#horae-setting-sub-api-scope-auto-summary').prop('checked', settings.subApiScopeAutoSummary !== false);
-    $('#horae-setting-sub-api-scope-manual-summary').prop('checked', settings.subApiScopeManualSummary !== false);
-    $('#horae-setting-sub-api-scope-brief').prop('checked', !!settings.subApiScopeBrief);
-    // 如果已有保存的模型名，初始化 select 选项
-    const _savedModel = settings.autoSummaryModel || '';
-    const _modelSel = document.getElementById('horae-setting-auto-summary-model');
-    if (_savedModel && _modelSel) {
-        _modelSel.innerHTML = '';
-        const opt = document.createElement('option');
-        opt.value = _savedModel;
-        opt.textContent = _savedModel;
-        opt.selected = true;
-        _modelSel.appendChild(opt);
-    }
+    _renderSubApiSettingsUi();
+    _setSubApiFormChannel(_subApiEditingChannelId ? _findSubApiChannel(_subApiEditingChannelId) : null);
     updateAutoSummaryHint();
 
     const sysPrompt = settings.customSystemPrompt || horaeManager.getDefaultSystemPrompt();
@@ -15421,16 +15775,7 @@ function getDefaultAnalysisPrompt() {
 }
 
 function _isSubApiScopeEnabled(taskType = '') {
-    switch (taskType) {
-        case 'autoSummary':
-            return settings.subApiScopeAutoSummary !== false;
-        case 'manualSummary':
-            return settings.subApiScopeManualSummary !== false;
-        case 'brief':
-            return !!settings.subApiScopeBrief;
-        default:
-            return true;
-    }
+    return !!_getSubApiConfigForTask(taskType);
 }
 
 function _shouldSkipSystemPromptInjectionOnSend() {
@@ -15488,15 +15833,16 @@ async function generateForSummary(prompt, options = {}) {
     const messageIndex = Number.isInteger(options?.messageIndex) ? options.messageIndex : null;
     // 从 DOM 补读一次副API设置，防止浏览器自动填充未触发 input 事件导致设置为空
     _syncSubApiSettingsFromDom();
-    const scopeEnabled = _isSubApiScopeEnabled(taskType);
+    const subApiConfig = _getSubApiConfigForTask(taskType);
+    const scopeEnabled = !!subApiConfig;
     const useCustom = scopeEnabled;
-    const hasUrl = !!(settings.autoSummaryApiUrl && settings.autoSummaryApiUrl.trim());
-    const hasKey = !!(settings.autoSummaryApiKey && settings.autoSummaryApiKey.trim());
-    const hasModel = !!(settings.autoSummaryModel && settings.autoSummaryModel.trim());
-    console.log(`[Horae] generateForSummary: task=${taskType || 'default'}, useCustom=${useCustom}, hasUrl=${hasUrl}, hasKey=${hasKey}, hasModel=${hasModel}`);
+    const hasUrl = !!(subApiConfig?.url);
+    const hasKey = !!(subApiConfig?.key);
+    const hasModel = !!(subApiConfig?.model);
+    console.log(`[Horae] generateForSummary: task=${taskType || 'default'}, useCustom=${useCustom}, channel=${subApiConfig?.channel?.name || 'main'}, hasUrl=${hasUrl}, hasKey=${hasKey}, hasModel=${hasModel}`);
     if (useCustom && hasUrl && hasKey && hasModel) {
-        console.log(`[Horae] 使用副API生成`);
-        return await generateWithDirectApi(prompt, { ...options, taskType, messageIndex });
+        console.log(`[Horae] 使用副API生成: ${subApiConfig.channel.name || subApiConfig.model}`);
+        return await generateWithDirectApi(prompt, { ...options, taskType, messageIndex, subApiChannel: subApiConfig.channel });
     }
     if (useCustom && (!hasUrl || !hasKey || !hasModel)) {
         const missing = [!hasUrl && 'API地址', !hasKey && 'API密钥', !hasModel && '模型名称'].filter(Boolean).join('、');
@@ -16105,26 +16451,22 @@ function _syncSubApiSettingsFromDom() {
         const keyEl = document.getElementById('horae-setting-auto-summary-api-key');
         const modelEl = document.getElementById('horae-setting-auto-summary-model');
         const streamEl = document.getElementById('horae-setting-summary-should-stream');
-        const autoSummaryScopeEl = document.getElementById('horae-setting-sub-api-scope-auto-summary');
-        const manualSummaryScopeEl = document.getElementById('horae-setting-sub-api-scope-manual-summary');
-        const briefScopeEl = document.getElementById('horae-setting-sub-api-scope-brief');
         let changed = false;
         if (streamEl && streamEl.checked !== (settings.summaryShouldStream !== false)) {
             settings.summaryShouldStream = streamEl.checked;
             changed = true;
         }
-        if (autoSummaryScopeEl && autoSummaryScopeEl.checked !== (settings.subApiScopeAutoSummary !== false)) {
-            settings.subApiScopeAutoSummary = autoSummaryScopeEl.checked;
-            changed = true;
+        settings.subApiAssignments = settings.subApiAssignments || {};
+        for (const cfg of SUB_API_TASK_CONFIGS) {
+            const selectEl = document.getElementById(cfg.selectId);
+            if (!selectEl) continue;
+            const nextValue = selectEl.value || SUB_API_MAIN_CHANNEL_ID;
+            if (settings.subApiAssignments[cfg.assignmentKey] !== nextValue) {
+                settings.subApiAssignments[cfg.assignmentKey] = nextValue;
+                changed = true;
+            }
         }
-        if (manualSummaryScopeEl && manualSummaryScopeEl.checked !== (settings.subApiScopeManualSummary !== false)) {
-            settings.subApiScopeManualSummary = manualSummaryScopeEl.checked;
-            changed = true;
-        }
-        if (briefScopeEl && briefScopeEl.checked !== !!settings.subApiScopeBrief) {
-            settings.subApiScopeBrief = briefScopeEl.checked;
-            changed = true;
-        }
+        _syncSubApiScopeFlagsFromAssignments();
         if (_ensureAutoFillPrevTimelineForSubApiBriefScope()) {
             changed = true;
         }
@@ -16399,10 +16741,10 @@ async function fetchRerankModels() {
 }
 
 /** 从副API拉取模型列表并填充下拉选单 */
-async function _fetchSubApiModels() {
-    _syncSubApiSettingsFromDom();
-    const rawUrl = (settings.autoSummaryApiUrl || '').trim();
-    const apiKey = (settings.autoSummaryApiKey || '').trim();
+async function _fetchSubApiModels(source = null) {
+    const form = source || _getSubApiFormData();
+    const rawUrl = String(form.url || '').trim();
+    const apiKey = String(form.key || '').trim();
     if (!rawUrl || !apiKey) {
         showToast(t('toast.vectorApiRequired'), 'warning');
         return [];
@@ -16412,7 +16754,7 @@ async function _fetchSubApiModels() {
     if (isGemini) {
         let base = rawUrl.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '').replace(/\/v\d+(beta\d*|alpha\d*)?(?:\/.*)?$/i, '');
         const isGoogle = /googleapis\.com|generativelanguage/i.test(base);
-        testUrl = `${base}/v1beta/models` + (isGoogle ? `?key=${apiKey}` : '');
+        testUrl = `${base}/v1beta/models` + (isGoogle ? `?key=${encodeURIComponent(apiKey)}` : '');
         headers = { 'Content-Type': 'application/json' };
         if (!isGoogle) headers['Authorization'] = `Bearer ${apiKey}`;
     } else {
@@ -16436,53 +16778,49 @@ async function _fetchSubApiModels() {
 async function fetchAndPopulateModels() {
     const btn = document.getElementById('horae-btn-fetch-models');
     const sel = document.getElementById('horae-setting-auto-summary-model');
+    const origHtml = btn?.innerHTML;
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
     try {
-        const models = await _fetchSubApiModels();
+        const form = _getSubApiFormData();
+        const models = await _fetchSubApiModels(form);
         if (!models.length) { showToast(t('toast.noModelsFetchedCheck'), 'warning'); return; }
-        const prev = settings.autoSummaryModel || '';
-        sel.innerHTML = '';
-        for (const m of models.sort()) {
-            const opt = document.createElement('option');
-            opt.value = m;
-            opt.textContent = m;
-            if (m === prev) opt.selected = true;
-            sel.appendChild(opt);
-        }
-        if (prev && !models.includes(prev)) {
-            const opt = document.createElement('option');
-            opt.value = prev;
-            opt.textContent = t('toast.modelManual', { name: prev });
-            opt.selected = true;
-            sel.prepend(opt);
-        }
+        const prev = form.model || '';
+        _populateModelSelect(sel, models, prev);
         if (!prev && models.length) {
             sel.value = models[0];
             settings.autoSummaryModel = models[0];
+        }
+        const channel = _findSubApiChannel(_subApiEditingChannelId);
+        if (channel) {
+            channel.models = [...new Set(models)];
+            if (!channel.model && sel.value) channel.model = sel.value;
+            settings.subApiChannels = _getSubApiChannels().map(item => item.id === channel.id ? channel : item);
             saveSettings();
         }
         showToast(t('toast.fetchedModels', { n: models.length }), 'success');
     } catch (err) {
         showToast(t('toast.fetchModelsFailed', { error: err.message || err }), 'error');
     } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i>'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = origHtml || '<i class="fa-solid fa-arrows-rotate"></i>'; }
     }
 }
 
 /** 测试副API连接 */
 async function testSubApiConnection() {
     const btn = document.getElementById('horae-btn-test-sub-api');
+    const origHtml = btn?.innerHTML;
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...'; }
     try {
-        const models = await _fetchSubApiModels();
-        const model = (settings.autoSummaryModel || '').trim();
+        const form = _getSubApiFormData();
+        const models = await _fetchSubApiModels(form);
+        const model = String(form.model || '').trim();
         const matchStr = model && models.some(m => m && m.toLowerCase().includes(model.toLowerCase()))
             ? t('toast.subApiMatchFound', { model }) : (model ? t('toast.subApiMatchNotFound', { model }) : '');
         showToast(t('toast.subApiTestSuccess', { n: models.length, match: matchStr }), 'success');
     } catch (err) {
         showToast(t('toast.subApiTestFailed', { error: err.message || err }), 'error');
     } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-plug-circle-check"></i>'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = origHtml || '<i class="fa-solid fa-plug-circle-check"></i>'; }
     }
 }
 
@@ -16594,12 +16932,13 @@ async function generateWithDirectApi(prompt, options = {}) {
     const shouldStream = _shouldStreamSummaryTasks();
     console.log(taskType, "taskType");
     const skipSnapshotTimelineInjection = taskType === 'autoSummary';
-    const _model = settings.autoSummaryModel.trim();
-    const _apiKey = settings.autoSummaryApiKey.trim();
+    const channel = options?.subApiChannel || _getSubApiConfigForTask(taskType)?.channel || null;
+    const _model = String(channel?.model || settings.autoSummaryModel || '').trim();
+    const _apiKey = String(channel?.key || settings.autoSummaryApiKey || '').trim();
     if (/gemini/i.test(_model)) {
-        // return await _geminiNativeRequest(prompt, settings.autoSummaryApiUrl.trim(), _model, _apiKey);
+        // return await _geminiNativeRequest(prompt, String(channel?.url || settings.autoSummaryApiUrl || '').trim(), _model, _apiKey);
     }
-    let url = settings.autoSummaryApiUrl.trim();
+    let url = String(channel?.url || settings.autoSummaryApiUrl || '').trim();
     if (!url.endsWith('/chat/completions')) {
         // url = url.replace(/\/+$/, '') + '/chat/completions';
         url = url.replace(/\/+$/, '');
@@ -16607,7 +16946,7 @@ async function generateWithDirectApi(prompt, options = {}) {
     const customPromptInjection = _getCustomPromptInjectionParts(taskType, options);
     const messages = await _buildSummaryMessages(prompt, { taskType, ...options });
     const body = {
-        model: settings.autoSummaryModel.trim(),
+        model: _model,
         messages,
         temperature: 0.7,
         max_tokens: 8192,

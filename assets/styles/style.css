@@ -1468,6 +1468,237 @@
     margin-left: 24px;
 }
 
+.horae-setting-description {
+    margin: 0 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--horae-text);
+}
+
+.horae-setting-sub-hint {
+    display: block;
+    margin-top: 6px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--horae-text-muted);
+}
+
+.horae-sub-api-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.horae-sub-api-group {
+    min-width: 0;
+}
+
+.horae-sub-api-divider {
+    margin: 20px 0;
+    border: none;
+    border-top: 1px dashed var(--horae-border);
+}
+
+.horae-sub-api-assignments {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.horae-sub-api-assignment-row {
+    display: grid;
+    grid-template-columns: minmax(96px, 0.38fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 0;
+}
+
+.horae-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.horae-form-group label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--horae-text-muted);
+}
+
+.horae-form-group>.horae-edit-field,
+.horae-sub-api-key-row .horae-edit-field,
+.horae-sub-api-model-row .horae-edit-field,
+.horae-sub-api-route-select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    background: var(--horae-bg-secondary);
+    border: 1px solid var(--horae-border);
+    border-radius: var(--horae-radius-sm);
+    color: var(--horae-text);
+    font-size: 13px;
+    outline: none;
+}
+
+.horae-form-group>.horae-edit-field:focus,
+.horae-sub-api-key-row .horae-edit-field:focus,
+.horae-sub-api-model-row .horae-edit-field:focus,
+.horae-sub-api-route-select:focus {
+    border-color: var(--horae-primary);
+    box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.16);
+}
+
+.horae-sub-api-key-row,
+.horae-sub-api-model-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.horae-sub-api-key-row .horae-edit-field,
+.horae-sub-api-model-row .horae-edit-field {
+    flex: 1;
+}
+
+.horae-sub-api-key-row .horae-btn,
+.horae-sub-api-model-row .horae-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.horae-sub-api-stream-row {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    margin-top: 2px;
+}
+
+.horae-sub-api-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.horae-api-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 250px;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--horae-border) transparent;
+}
+
+.horae-api-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.horae-api-list::-webkit-scrollbar-thumb {
+    background-color: var(--horae-border);
+    border-radius: 999px;
+}
+
+.horae-api-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    background: var(--horae-bg-secondary);
+    border: 1px solid var(--horae-border);
+    border-radius: 8px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.horae-api-item:hover {
+    background: var(--horae-bg-hover);
+    border-color: rgba(124, 58, 237, 0.45);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.horae-api-info {
+    min-width: 0;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.horae-api-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--horae-text);
+}
+
+.horae-api-url,
+.horae-api-model {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--horae-text-muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.horae-api-model {
+    color: var(--horae-accent);
+}
+
+.horae-api-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 3px;
+}
+
+.horae-api-tags span {
+    padding: 2px 7px;
+    border: 1px solid rgba(124, 58, 237, 0.28);
+    border-radius: 999px;
+    background: rgba(124, 58, 237, 0.12);
+    color: var(--horae-accent);
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.horae-api-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+}
+
+@media (max-width: 560px) {
+    .horae-sub-api-assignment-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    .horae-sub-api-key-row,
+    .horae-sub-api-model-row,
+    .horae-sub-api-form-actions,
+    .horae-api-item {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .horae-sub-api-key-row .horae-btn,
+    .horae-sub-api-model-row .horae-btn,
+    .horae-sub-api-form-actions .horae-btn {
+        width: 100%;
+    }
+
+    .horae-api-actions {
+        align-self: flex-end;
+    }
+}
+
 .horae-excluded-characters-desc {
     margin-bottom: 10px;
 }
