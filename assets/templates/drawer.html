@@ -1260,7 +1260,7 @@
                                 <span class="horae-setting-sub-hint"
                                     data-i18n="settings.keepRecentHint">最近N条AI消息<b>绝对不会</b>被总结；中间夹着的用户消息会随全文一起发送。</span>
                             </div>
-                            <div class="horae-setting-item">
+                            <div class="horae-setting-item" style="display: none !important;">
                                 <label class="horae-setting-control-row" for="horae-setting-auto-summary-mode">
                                     <span data-i18n="settings.bufferMode">缓冲模式</span>
                                     <select id="horae-setting-auto-summary-mode">
@@ -1269,7 +1269,7 @@
                                     </select>
                                 </label>
                             </div>
-                            <div class="horae-setting-item">
+                            <div class="horae-setting-item" style="display: none !important;">
                                 <label class="horae-setting-control-row" for="horae-setting-auto-summary-source">
                                     <span data-i18n="settings.autoSummarySource">摘要来源</span>
                                     <select id="horae-setting-auto-summary-source">
@@ -1311,7 +1311,7 @@
                                     data-i18n="settings.resummaryThresholdHint">同层总结达到该数量后会合并为更高层总结；二次总结达到数量后继续三次总结，以此类推。</span>
                             </div>
                             <div class="horae-setting-item"
-                                style="border-top: 1px solid var(--horae-border); padding-top: 8px; margin-top: 4px;">
+                                style="display: none !important; border-top: 1px solid var(--horae-border); padding-top: 8px; margin-top: 4px;">
                                 <label data-i18n="settings.batchMaxMessages">
                                     单次最大消息条数
                                     <input type="number" id="horae-setting-auto-summary-batch-msgs" min="5" max="500"
@@ -1320,7 +1320,7 @@
                                 <span class="horae-setting-sub-hint"
                                     data-i18n="settings.batchMaxMessagesHint">每次自动总结最多处理多少条消息。旧档案首次启用时会分多轮逐步消化。</span>
                             </div>
-                            <div class="horae-setting-item">
+                            <div class="horae-setting-item" style="display: none !important;">
                                 <label data-i18n="settings.batchMaxTokens">
                                     单次最大 Token 数
                                     <input type="number" id="horae-setting-auto-summary-batch-tokens" min="10000"

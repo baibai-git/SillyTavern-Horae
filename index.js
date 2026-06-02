@@ -1392,6 +1392,11 @@ function loadSettings() {
     if (syncExcludedCharacterNamesInPlace()) changed = true;
     if (_normalizeAutoSummarySettingsInPlace(saved || {}) || _normalizeSubApiSettingsInPlace(saved || {}, { migrateLegacy: true }) || _normalizePromptSettingsInPlace() || _normalizeVectorRecallPresetsInPlace() || _normalizeVectorStripTagsInPlace(saved || {}) || _normalizeRpgSettingsInPlace()) changed = true;
     if (_migrateLegacyVectorSettings(settings)) changed = true;
+    if (settings.autoSummaryBufferMode !== 'messages' || settings.autoSummarySourceMode !== 'events') {
+        settings.autoSummaryBufferMode = 'messages';
+        settings.autoSummarySourceMode = 'events';
+        changed = true;
+    }
     // console.log(
     //     `[Horae][MainPersonality] loadSettings: saved=${saved?.sendMainCharacterPersonality} merged=${!!settings.sendMainCharacterPersonality} sendCharacters=${settings.sendCharacters !== false} pinnedNpcs=${JSON.stringify(settings.pinnedNpcs || [])}`
     // );
@@ -1415,6 +1420,8 @@ function _migrateAttrConfig() {
  * 保存设置
  */
 function saveSettings() {
+    settings.autoSummaryBufferMode = 'messages';
+    settings.autoSummarySourceMode = 'events';
     _normalizePromptTextFields(settings, PROMPT_SETTING_KEYS);
     _normalizeSubApiSettingsInPlace(settings);
     extension_settings[EXTENSION_NAME] = settings;
