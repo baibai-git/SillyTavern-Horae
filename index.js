@@ -4,7 +4,7 @@
  *
  * 作者: 柏柏
  * 基于 SenriYuki 开发的 Horae 时光记忆进行功能增强与重构
- * 版本: 1.15B
+ * 版本: 1.15.1B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -18,7 +18,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.1B';
 
 // ============================================
 // 常量定义
@@ -26,7 +26,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.15B';
+const VERSION = '1.15.1B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -199,6 +199,13 @@ const SUB_API_TASK_CONFIGS = [
         selectId: 'horae-setting-sub-api-channel-brief',
         labelKey: 'settings.subApiScopeBrief',
     },
+    {
+        taskType: 'aiScan',
+        assignmentKey: 'aiScan',
+        scopeKey: 'subApiScopeAiScan',
+        selectId: 'horae-setting-sub-api-channel-ai-scan',
+        labelKey: 'settings.aiSmartSummary',
+    },
 ];
 
 const DEFAULT_SETTINGS = {
@@ -277,12 +284,14 @@ const DEFAULT_SETTINGS = {
         autoSummary: 'default',
         manualSummary: 'default',
         brief: 'default',
+        aiScan: 'default',
     },
     _subApiLegacyMigrated: false,    // 旧单副API字段是否已迁移到多渠道结构
     summaryShouldStream: false,      // 总结/补全生成是否使用流式传输
     subApiScopeAutoSummary: false,   // 副API应用范围：自动总结
     subApiScopeManualSummary: false, // 副API应用范围：手动总结（时间线压缩）
     subApiScopeBrief: false,        // 副API应用范围：AI分析/摘要
+    subApiScopeAiScan: false,       // 副API应用范围：AI智能补全（批量）
     antiParaphraseMode: false,      // 反转述模式：AI回复时结算上一条USER的内容
     sideplayMode: false,            // 番外/小剧场模式：启用后可标记消息跳过Horae
     // RPG 模式
@@ -1131,6 +1140,7 @@ function _normalizeSubApiSettingsInPlace(saved = {}, options = {}) {
         subApiScopeAutoSummary: settings.subApiScopeAutoSummary,
         subApiScopeManualSummary: settings.subApiScopeManualSummary,
         subApiScopeBrief: settings.subApiScopeBrief,
+        subApiScopeAiScan: settings.subApiScopeAiScan,
     });
 
     const rawChannels = Array.isArray(settings.subApiChannels) ? settings.subApiChannels : [];
@@ -1193,6 +1203,7 @@ function _normalizeSubApiSettingsInPlace(saved = {}, options = {}) {
         subApiScopeAutoSummary: settings.subApiScopeAutoSummary,
         subApiScopeManualSummary: settings.subApiScopeManualSummary,
         subApiScopeBrief: settings.subApiScopeBrief,
+        subApiScopeAiScan: settings.subApiScopeAiScan,
     });
 }
 
@@ -15834,6 +15845,7 @@ function _pushSystemPromptIfAny(messages, content) {
  * - autoSummary: 自动总结/二次总结
  * - manualSummary: 手动时间线压缩总结
  * - brief: 摘要（预留）
+ * - aiScan: AI智能补全（批量历史补全）
  */
 async function generateForSummary(prompt, options = {}) {
     const taskType = options?.taskType || '';
@@ -15879,6 +15891,8 @@ async function generateForSummary(prompt, options = {}) {
         noContextInjectionMarker: shouldSkipContextInject,
         noTimelineInjectionMarker: shouldSkipTimelineInject,
         noSystemPromptInjectionMarker: shouldSkipSystemInject,
+        skipLocalSnapshotInjection: !!options?.skipLocalSnapshotInjection,
+        skipLocalTimelineInjection: !!options?.skipLocalTimelineInjection,
         injectCustomPrompts: options?.injectCustomPrompts,
     });
 }
@@ -18262,7 +18276,8 @@ event:重要程度|事件描述
 
         try {
             const response = await Promise.race([
-                _generateForAiTasks(batchPrompt, {
+                generateForSummary(batchPrompt, {
+                    taskType: 'aiScan',
                     noContextInjectionMarker: true,
                     noTimelineInjectionMarker: true,
                     noVectorRecallMarker: true,
