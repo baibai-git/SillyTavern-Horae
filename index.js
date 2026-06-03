@@ -2157,20 +2157,12 @@ function updateEmptyFloorsDisplay() {
         const msg = chat[i];
         if (!msg || msg.is_user) continue;
 
-        // 仅检测包含 horae_meta 且未主动设置 _skipHorae 标记的 AI 消息
-        // 如果从未被解析且没打 skipHorae，或者解析出来的各项元数据皆空
+        // 仅检测未主动设置 _skipHorae 标记的 AI 消息。
+        // “有效时间线”统一按 time + event 判断；其它物品/NPC/场景数据不再单独算完整。
         const meta = msg.horae_meta;
         if (meta?._skipHorae) continue;
 
-        const hasEvents = (meta?.events && meta.events.length > 0) || (meta?.event?.summary && String(meta.event.summary).trim());
-        const hasItems = meta?.items && Object.keys(meta.items).length > 0;
-        const hasNpcs = meta?.npcs && Object.keys(meta.npcs).length > 0;
-        const hasAffection = meta?.affection && Object.keys(meta.affection).length > 0;
-        const hasMood = meta?.mood && Object.keys(meta.mood).length > 0;
-        const hasRelationships = meta?.relationships && meta.relationships.length > 0;
-        const hasScene = (meta?.scene?.location && String(meta.scene.location).trim()) || (meta?.scene?.scene_desc && String(meta.scene.scene_desc).trim());
-
-        if (!hasEvents && !hasItems && !hasNpcs && !hasAffection && !hasMood && !hasRelationships && !hasScene) {
+        if (!_hasTimeAndTimeline(meta)) {
             emptyFloors.push(i);
         }
     }
@@ -20194,7 +20186,7 @@ function _autoFillPreviousAiNeedsWork(meta, rpgOutputActive = _isRpgOutputActive
     return !_hasAutoFillRequiredData(meta, rpgOutputActive, rpgPayload);
 }
 
-function _messageTextHasAutoFillRequiredData(sourceText, rpgOutputActive = _isRpgOutputActive()) {
+function _messageTextHasTimeAndTimeline(sourceText) {
     if (!sourceText) return false;
 
     let parsed = horaeManager.parseHoraeTag(sourceText);
@@ -20203,7 +20195,7 @@ function _messageTextHasAutoFillRequiredData(sourceText, rpgOutputActive = _isRp
     }
     if (!parsed) return false;
 
-    return _hasAutoFillRequiredData(parsed, rpgOutputActive, parsed?.rpg);
+    return _hasTimeAndTimeline(parsed);
 }
 
 function _findOlderAiMissingAutoFillDataBeforeTrailingUser(chat) {
@@ -20211,7 +20203,6 @@ function _findOlderAiMissingAutoFillDataBeforeTrailingUser(chat) {
     if (previousAiIndex <= 0) return [];
 
     const missingIndices = [];
-    const rpgOutputActive = _isRpgOutputActive();
 
     for (let i = 0; i < previousAiIndex; i++) {
         const msg = chat[i];
@@ -20222,8 +20213,8 @@ function _findOlderAiMissingAutoFillDataBeforeTrailingUser(chat) {
         if (!sourceText) continue;
 
         const meta = horaeManager.getMessageMeta(i) || msg.horae_meta || null;
-        if (!_autoFillPreviousAiNeedsWork(meta, rpgOutputActive)) continue;
-        if (_messageTextHasAutoFillRequiredData(sourceText, rpgOutputActive)) continue;
+        if (_hasTimeAndTimeline(meta)) continue;
+        if (_messageTextHasTimeAndTimeline(sourceText)) continue;
 
         missingIndices.push(i);
     }

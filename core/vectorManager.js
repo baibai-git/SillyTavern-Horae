@@ -2,7 +2,9 @@
  * Horae - 向量记忆管理器
  * 基于 Transformers.js 的本地向量检索系统
  *
- * 数据按 chatId 隔离，向量存 IndexedDB，轻量索引存 chat[0].horae_meta.vectorIndex
+ * 当前聊天的 messageIndex -> vector 只存在内存中。
+ * 持久化层优先使用柏宝库全局向量缓存：modelName + document -> float32 vector。
+ * IndexedDB 仅作为柏宝库不可用时的兼容 fallback。
  */
 
 import { calculateDetailedRelativeTime, getRelativeTimeMeta } from '../utils/timeUtils.js';
@@ -14,6 +16,12 @@ const DB_NAME = 'HoraeVectors';
 const DB_VERSION = 1;
 const STORE_NAME = 'vectors';
 const RECALL_CACHE_LIMIT = 16;
+const BAIBAOKU_DATABASE = 'baibaoshu';
+const BAIBAOKU_DISPLAY_NAME = '柏宝书';
+const BAIBAOKU_STORE_VECTORS = 'vectors';
+const VECTOR_CACHE_KEY_VERSION = 'v1';
+const BAIBAOKU_BATCH_LIMIT = 1000;
+const BAIBAOKU_FRONTEND_WAIT_MS = 150;
 
 const MODEL_CONFIG = {
     'Xenova/bge-small-zh-v1.5': { dimensions: 512, prefix: null },
@@ -87,6 +95,13 @@ export class VectorManager {
         this._recallCacheLimit = RECALL_CACHE_LIMIT;
         this._keywordTable = EMPTY_KEYWORD_TABLE;
         this._activeKeywordLang = 'en';
+        this._storageBackend = 'unknown';
+        this._baibaokuReady = null;
+        this._baibaokuReadyPromise = null;
+        this._baibaokuBridge = null;
+        this._baibaokuBridgePromise = null;
+        this._vectorModelHash = '';
+        this._vectorModelHashName = '';
     }
 
     // ========================================
@@ -226,34 +241,10 @@ export class VectorManager {
         if (!chatId) return;
 
         try {
-            await this._openDB();
-            const stored = await this._loadAllVectors();
-            const staleKeys = [];
-            for (const item of stored) {
-                const normalizedMessageIndex = this._normalizeMessageIndex(item.messageIndex);
-                if (normalizedMessageIndex === null || normalizedMessageIndex >= chat.length) {
-                    staleKeys.push(item.messageIndex);
-                    continue;
-                }
-                const meta = chat[normalizedMessageIndex]?.horae_meta;
-                const doc = this.buildVectorDocument(meta);
-                if (!doc || this._hashString(doc) !== item.hash) {
-                    staleKeys.push(item.messageIndex);
-                    continue;
-                }
-                this.vectors.set(normalizedMessageIndex, {
-                    vector: item.vector,
-                    hash: item.hash,
-                    document: item.document,
-                });
-                this._updateTermCounts(item.document, 1);
-                this.totalDocuments++;
+            const loadedFromBaiBaoKu = await this._loadChatFromBaiBaoKu(chat);
+            if (!loadedFromBaiBaoKu) {
+                await this._loadChatFromIndexedDB(chat);
             }
-            if (staleKeys.length > 0) {
-                for (const idx of staleKeys) await this._deleteVector(idx);
-                console.log(`[Horae Vector] 清理了 ${staleKeys.length} 条过期/分支外向量`);
-            }
-            console.log(`[Horae Vector] 已加载 ${this.vectors.size} 条向量 (chatId: ${chatId})`);
         } catch (err) {
             console.warn('[Horae Vector] 加载向量索引失败:', err);
         }
@@ -329,21 +320,19 @@ export class VectorManager {
         const existing = this.vectors.get(messageIndex);
         if (existing && existing.hash === hash) return;
 
-        const text = this._prepareText(doc, false);
-        const result = await this._embed([text]);
-        if (!result || !result.vectors?.[0]) return;
+        const task = await this._createVectorTask(messageIndex, doc, hash);
+        const cached = await this._loadCachedVectors([task]);
+        let vector = cached.get(task.cacheKey);
 
-        const vector = result.vectors[0];
-
-        if (existing) {
-            this._updateTermCounts(existing.document, -1);
-        } else {
-            this.totalDocuments++;
+        if (!vector) {
+            const text = this._prepareText(doc, false);
+            const result = await this._embed([text]);
+            if (!result || !result.vectors?.[0]) return;
+            vector = result.vectors[0];
+            await this._saveVector(messageIndex, { vector, hash, document: doc, cacheKey: task.cacheKey });
         }
 
-        this.vectors.set(messageIndex, { vector, hash, document: doc });
-        this._updateTermCounts(doc, 1);
-        await this._saveVector(messageIndex, { vector, hash, document: doc });
+        this._setMemoryVector(messageIndex, { vector, hash, document: doc });
         this.clearRecallCache('vector-index-updated');
     }
 
@@ -377,44 +366,61 @@ export class VectorManager {
             const hash = this._hashString(doc);
             const existing = this.vectors.get(i);
             if (existing && existing.hash === hash) continue;
-            tasks.push({ messageIndex: i, document: doc, hash });
+            tasks.push(await this._createVectorTask(i, doc, hash));
         }
 
         if (tasks.length === 0) return { indexed: 0, skipped: chat.length };
 
+        const cached = await this._loadCachedVectors(tasks);
+        const missingGroups = new Map();
         const batchSize = this.isApiMode ? 64 : 16;
         let indexed = 0;
 
-        for (let b = 0; b < tasks.length; b += batchSize) {
-            const batch = tasks.slice(b, b + batchSize);
+        for (const task of tasks) {
+            const cachedVector = cached.get(task.cacheKey);
+            if (!cachedVector) {
+                if (!missingGroups.has(task.cacheKey)) missingGroups.set(task.cacheKey, []);
+                missingGroups.get(task.cacheKey).push(task);
+                continue;
+            }
+
+            this._setMemoryVector(task.messageIndex, {
+                vector: cachedVector,
+                hash: task.hash,
+                document: task.document,
+            });
+            indexed++;
+        }
+
+        const embedTasks = [...missingGroups.values()].map(group => group[0]);
+        for (let b = 0; b < embedTasks.length; b += batchSize) {
+            const batch = embedTasks.slice(b, b + batchSize);
             const texts = batch.map(t => this._prepareText(t.document, false));
             const result = await this._embed(texts);
             if (!result?.vectors) continue;
 
+            const savedVectors = [];
             for (let j = 0; j < batch.length; j++) {
                 const task = batch[j];
                 const vector = result.vectors[j];
                 if (!vector) continue;
 
-                const old = this.vectors.get(task.messageIndex);
-                if (old) {
-                    this._updateTermCounts(old.document, -1);
-                } else {
-                    this.totalDocuments++;
+                const group = missingGroups.get(task.cacheKey) || [task];
+                for (const target of group) {
+                    this._setMemoryVector(target.messageIndex, {
+                        vector,
+                        hash: target.hash,
+                        document: target.document,
+                    });
+                    indexed++;
                 }
-
-                this.vectors.set(task.messageIndex, {
-                    vector,
-                    hash: task.hash,
-                    document: task.document,
-                });
-                this._updateTermCounts(task.document, 1);
-                await this._saveVector(task.messageIndex, { vector, hash: task.hash, document: task.document });
-                indexed++;
+                savedVectors.push({ ...task, vector });
             }
 
+            await this._saveVectors(savedVectors);
+
             if (onProgress) {
-                onProgress({ current: Math.min(b + batchSize, tasks.length), total: tasks.length });
+                onProgress({ current: Math.min(indexed, tasks.length), total: tasks.length });
             }
         }
 
@@ -428,6 +434,106 @@ export class VectorManager {
         this.totalDocuments = 0;
         this.clearRecallCache('vector-index-cleared');
         if (this.chatId) await this._clearVectors();
+    }
+
+    async _loadChatFromBaiBaoKu(chat) {
+        if (!await this._ensureBaiBaoKuReady()) return false;
+
+        const tasks = await this._collectVectorTasks(chat);
+        if (tasks.length === 0) {
+            this._storageBackend = 'baibaoku';
+            console.log(`[Horae Vector] 柏宝库缓存可用，当前聊天无可加载向量 (chatId: ${this.chatId})`);
+            return true;
+        }
+
+        const cached = await this._loadCachedVectors(tasks);
+        if (this._baibaokuReady === false) {
+            this.vectors.clear();
+            this.termCounts.clear();
+            this.totalDocuments = 0;
+            return false;
+        }
+
+        for (const task of tasks) {
+            const vector = cached.get(task.cacheKey);
+            if (!vector) continue;
+            this._setMemoryVector(task.messageIndex, {
+                vector,
+                hash: task.hash,
+                document: task.document,
+            });
+        }
+
+        this._storageBackend = 'baibaoku';
+        console.log(`[Horae Vector] 已从柏宝库全局缓存加载 ${this.vectors.size}/${tasks.length} 条向量 (chatId: ${this.chatId})`);
+        return true;
+    }
+
+    async _loadChatFromIndexedDB(chat) {
+        this._storageBackend = 'indexeddb';
+        await this._openDB();
+        const stored = await this._loadAllVectors();
+        const staleKeys = [];
+        for (const item of stored) {
+            const normalizedMessageIndex = this._normalizeMessageIndex(item.messageIndex);
+            if (normalizedMessageIndex === null || normalizedMessageIndex >= chat.length) {
+                staleKeys.push(item.messageIndex);
+                continue;
+            }
+            const meta = chat[normalizedMessageIndex]?.horae_meta;
+            const doc = this.buildVectorDocument(meta);
+            if (!doc || this._hashString(doc) !== item.hash) {
+                staleKeys.push(item.messageIndex);
+                continue;
+            }
+            this._setMemoryVector(normalizedMessageIndex, {
+                vector: item.vector,
+                hash: item.hash,
+                document: item.document,
+            });
+        }
+        if (staleKeys.length > 0) {
+            for (const idx of staleKeys) await this._deleteIndexedDBVector(idx);
+            console.log(`[Horae Vector] 清理了 ${staleKeys.length} 条过期/分支外 IndexedDB 向量`);
+        }
+        console.log(`[Horae Vector] 已从 IndexedDB fallback 加载 ${this.vectors.size} 条向量 (chatId: ${this.chatId})`);
+    }
+
+    async _collectVectorTasks(chat) {
+        if (!Array.isArray(chat) || chat.length === 0) return [];
+
+        const tasks = [];
+        for (let i = 0; i < chat.length; i++) {
+            const msg = chat[i];
+            if (!msg || msg.is_user) continue;
+            const meta = msg.horae_meta;
+            if (!meta || meta._skipHorae) continue;
+            const doc = this.buildVectorDocument(meta);
+            if (!doc) continue;
+            tasks.push(await this._createVectorTask(i, doc));
+        }
+        return tasks;
+    }
+
+    async _createVectorTask(messageIndex, document, hash = null) {
+        return {
+            messageIndex,
+            document,
+            hash: hash || this._hashString(document),
+            cacheKey: await this._buildVectorCacheKey(document),
+        };
+    }
+
+    _setMemoryVector(messageIndex, entry) {
+        const old = this.vectors.get(messageIndex);
+        if (old) {
+            this._updateTermCounts(old.document, -1);
+        } else {
+            this.totalDocuments++;
+        }
+
+        this.vectors.set(messageIndex, entry);
+        this._updateTermCounts(entry.document, 1);
     }
 
     clearRecallCache(reason = '') {
@@ -3477,7 +3583,245 @@ export class VectorManager {
     }
 
     // ========================================
-    // IndexedDB
+    // 柏宝库全局向量缓存
+    // ========================================
+
+    async _ensureBaiBaoKuReady() {
+        if (this._baibaokuReady === true) return true;
+        if (this._baibaokuReady === false) {
+            if (globalThis.BaiBaoKu && !this._baibaokuBridge) {
+                this._baibaokuReady = null;
+            } else {
+                return false;
+            }
+        }
+        if (this._baibaokuReadyPromise) return this._baibaokuReadyPromise;
+
+        this._baibaokuReadyPromise = (async () => {
+            try {
+                const bridge = await this._getBaiBaoKuBridge(BAIBAOKU_FRONTEND_WAIT_MS);
+                if (!bridge) {
+                    throw new Error('柏宝库前端 bridge 未加载');
+                }
+
+                const available = typeof bridge.isAvailable === 'function'
+                    ? await bridge.isAvailable()
+                    : Boolean((await bridge.status?.())?.driver?.available);
+
+                if (!available) {
+                    throw new Error('柏宝库后端或 SQLite 驱动不可用');
+                }
+
+                await this._baibaokuRequest('open', {
+                    displayName: BAIBAOKU_DISPLAY_NAME,
+                    version: 1,
+                });
+
+                this._baibaokuReady = true;
+                return true;
+            } catch (err) {
+                this._baibaokuReady = false;
+                console.warn('[Horae Vector] 柏宝库不可用，回退 IndexedDB:', err?.message || err);
+                return false;
+            } finally {
+                this._baibaokuReadyPromise = null;
+            }
+        })();
+
+        return this._baibaokuReadyPromise;
+    }
+
+    async _getBaiBaoKuBridge(waitMs = 0) {
+        if (this._baibaokuBridge) return this._baibaokuBridge;
+        if (globalThis.BaiBaoKu) {
+            this._baibaokuBridge = globalThis.BaiBaoKu;
+            return this._baibaokuBridge;
+        }
+        if (waitMs <= 0) return null;
+        if (this._baibaokuBridgePromise) return this._baibaokuBridgePromise;
+
+        this._baibaokuBridgePromise = new Promise(resolve => {
+            let done = false;
+            const finish = (bridge = null) => {
+                if (done) return;
+                done = true;
+                window.removeEventListener('baibaoku:ready', onReady);
+                clearTimeout(timer);
+                this._baibaokuBridge = bridge || globalThis.BaiBaoKu || null;
+                resolve(this._baibaokuBridge);
+            };
+            const onReady = event => finish(event?.detail || globalThis.BaiBaoKu || null);
+            const timer = setTimeout(() => finish(null), waitMs);
+            window.addEventListener('baibaoku:ready', onReady, { once: true });
+        }).finally(() => {
+            this._baibaokuBridgePromise = null;
+        });
+
+        return this._baibaokuBridgePromise;
+    }
+
+    async _baibaokuRequest(action, body = {}) {
+        const bridge = this._baibaokuBridge || await this._getBaiBaoKuBridge(0);
+        if (!bridge || typeof bridge.request !== 'function') {
+            throw new Error('柏宝库前端 bridge 不可用');
+        }
+
+        return await bridge.request(action, {
+            database: BAIBAOKU_DATABASE,
+            ...body,
+        });
+    }
+
+    async _loadCachedVectors(tasks) {
+        const result = new Map();
+        if (!tasks?.length) return result;
+        if (!await this._ensureBaiBaoKuReady()) return result;
+
+        const keys = [...new Set(tasks.map(task => task.cacheKey).filter(Boolean))];
+        try {
+            for (let offset = 0; offset < keys.length; offset += BAIBAOKU_BATCH_LIMIT) {
+                const batchKeys = keys.slice(offset, offset + BAIBAOKU_BATCH_LIMIT);
+                const data = await this._baibaokuRequest('get-many', {
+                    store: BAIBAOKU_STORE_VECTORS,
+                    keys: batchKeys,
+                });
+
+                for (const entry of data?.entries || []) {
+                    if (!entry?.exists || entry.type !== 'float32' || typeof entry.value !== 'string') continue;
+                    try {
+                        const vector = this._decodeFloat32Base64(entry.value);
+                        if (this.dimensions && vector.length !== this.dimensions) {
+                            console.warn(`[Horae Vector] 忽略维度不匹配的柏宝库缓存: key=${entry.key}, cached=${vector.length}, expected=${this.dimensions}`);
+                            continue;
+                        }
+                        result.set(entry.key, vector);
+                    } catch (err) {
+                        console.warn(`[Horae Vector] 忽略损坏的柏宝库向量缓存: key=${entry.key}`, err);
+                    }
+                }
+            }
+        } catch (err) {
+            this._baibaokuReady = false;
+            console.warn('[Horae Vector] 读取柏宝库向量缓存失败，回退 IndexedDB:', err?.message || err);
+        }
+
+        return result;
+    }
+
+    async _saveVectors(items) {
+        if (!items?.length) return;
+
+        if (await this._ensureBaiBaoKuReady()) {
+            try {
+                const unique = new Map();
+                for (const item of items) {
+                    if (!item?.cacheKey || !item.vector) continue;
+                    unique.set(item.cacheKey, {
+                        key: item.cacheKey,
+                        type: 'float32',
+                        value: this._encodeFloat32Base64(item.vector),
+                    });
+                }
+
+                const entries = [...unique.values()];
+                for (let offset = 0; offset < entries.length; offset += BAIBAOKU_BATCH_LIMIT) {
+                    await this._baibaokuRequest('set-many', {
+                        store: BAIBAOKU_STORE_VECTORS,
+                        entries: entries.slice(offset, offset + BAIBAOKU_BATCH_LIMIT),
+                    });
+                }
+                this._storageBackend = 'baibaoku';
+                return;
+            } catch (err) {
+                this._baibaokuReady = false;
+                console.warn('[Horae Vector] 写入柏宝库向量缓存失败，回退 IndexedDB:', err?.message || err);
+            }
+        }
+
+        for (const item of items) {
+            await this._saveIndexedDBVector(item.messageIndex, {
+                vector: item.vector,
+                hash: item.hash,
+                document: item.document,
+            });
+        }
+        this._storageBackend = 'indexeddb';
+    }
+
+    async _buildVectorCacheKey(document) {
+        const modelHash = await this._getVectorModelHash();
+        const documentHash = await this._stableHash(document || '');
+        return `${VECTOR_CACHE_KEY_VERSION}/${modelHash}/${documentHash}`;
+    }
+
+    async _getVectorModelHash() {
+        const modelName = this.modelName || 'unknown';
+        if (this._vectorModelHashName === modelName && this._vectorModelHash) {
+            return this._vectorModelHash;
+        }
+
+        this._vectorModelHashName = modelName;
+        this._vectorModelHash = await this._stableHash(modelName);
+        return this._vectorModelHash;
+    }
+
+    async _stableHash(text) {
+        const input = String(text ?? '');
+        if (globalThis.crypto?.subtle && globalThis.TextEncoder) {
+            const bytes = new TextEncoder().encode(input);
+            const digest = await crypto.subtle.digest('SHA-256', bytes);
+            return [...new Uint8Array(digest)]
+                .map(byte => byte.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+        return this._hashString(input);
+    }
+
+    _encodeFloat32Base64(vector) {
+        const length = vector?.length || 0;
+        const bytes = new Uint8Array(length * 4);
+        const view = new DataView(bytes.buffer);
+        for (let i = 0; i < length; i++) {
+            view.setFloat32(i * 4, Number(vector[i]) || 0, true);
+        }
+        return this._bytesToBase64(bytes);
+    }
+
+    _decodeFloat32Base64(value) {
+        const bytes = this._base64ToBytes(value);
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const length = Math.floor(bytes.byteLength / 4);
+        const vector = new Float32Array(length);
+        for (let i = 0; i < length; i++) {
+            vector[i] = view.getFloat32(i * 4, true);
+        }
+        return vector;
+    }
+
+    _bytesToBase64(bytes) {
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+            const chunk = bytes.subarray(i, i + chunkSize);
+            for (let j = 0; j < chunk.length; j++) {
+                binary += String.fromCharCode(chunk[j]);
+            }
+        }
+        return btoa(binary);
+    }
+
+    _base64ToBytes(value) {
+        const binary = atob(String(value || ''));
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+    }
+
+    // ========================================
+    // IndexedDB fallback
     // ========================================
 
     async _openDB() {
@@ -3573,6 +3917,23 @@ export class VectorManager {
     }
 
     async _saveVector(messageIndex, data) {
+        if (!data?.skipGlobalCache) {
+            await this._saveVectors([{
+                messageIndex,
+                vector: data.vector,
+                hash: data.hash,
+                document: data.document,
+                cacheKey: data.cacheKey || await this._buildVectorCacheKey(data.document),
+            }]);
+            return;
+        }
+
+        if (this._storageBackend === 'indexeddb') {
+            await this._saveIndexedDBVector(messageIndex, data);
+        }
+    }
+
+    async _saveIndexedDBVector(messageIndex, data) {
         await this._openDB();
         const key = `${this.chatId}_${messageIndex}`;
         return new Promise((resolve, reject) => {
@@ -3602,6 +3963,14 @@ export class VectorManager {
     }
 
     async _deleteVector(messageIndex) {
+        if (this._storageBackend !== 'indexeddb') {
+            return;
+        }
+
+        await this._deleteIndexedDBVector(messageIndex);
+    }
+
+    async _deleteIndexedDBVector(messageIndex) {
         await this._openDB();
         const key = `${this.chatId}_${messageIndex}`;
         return new Promise((resolve, reject) => {
@@ -3613,6 +3982,10 @@ export class VectorManager {
     }
 
     async _clearVectors() {
+        if (this._storageBackend !== 'indexeddb') {
+            return;
+        }
+
         await this._openDB();
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(STORE_NAME, 'readwrite');
