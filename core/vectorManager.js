@@ -19,6 +19,7 @@ const RECALL_CACHE_LIMIT = 16;
 const BAIBAOKU_DATABASE = 'baibaoshu';
 const BAIBAOKU_DISPLAY_NAME = '柏宝书';
 const BAIBAOKU_STORE_VECTORS = 'vectors';
+const BAIBAOKU_API_BASE = '/api/plugins/baibaoku/v1';
 const VECTOR_CACHE_KEY_VERSION = 'v1';
 const BAIBAOKU_BATCH_LIMIT = 1000;
 const BAIBAOKU_FRONTEND_WAIT_MS = 150;
@@ -100,6 +101,9 @@ export class VectorManager {
         this._baibaokuReadyPromise = null;
         this._baibaokuBridge = null;
         this._baibaokuBridgePromise = null;
+        this._baibaokuBackendBridge = null;
+        this._baibaokuBackendStatusPromise = null;
+        this._requestHeadersPromise = null;
         this._vectorModelHash = '';
         this._vectorModelHashName = '';
     }
@@ -245,6 +249,7 @@ export class VectorManager {
             if (!loadedFromBaiBaoKu) {
                 await this._loadChatFromIndexedDB(chat);
             }
+            this._logStorageBackend('聊天索引加载使用');
         } catch (err) {
             console.warn('[Horae Vector] 加载向量索引失败:', err);
         }
@@ -3599,10 +3604,14 @@ export class VectorManager {
 
         this._baibaokuReadyPromise = (async () => {
             try {
-                const bridge = await this._getBaiBaoKuBridge(BAIBAOKU_FRONTEND_WAIT_MS);
+                let bridge = await this._getBaiBaoKuBridge(BAIBAOKU_FRONTEND_WAIT_MS);
                 if (!bridge) {
-                    throw new Error('柏宝库前端 bridge 未加载');
+                    bridge = await this._getBaiBaoKuBackendBridge();
                 }
+                if (!bridge) {
+                    throw new Error('柏宝库前端 bridge 未加载，后端接口也不可用');
+                }
+                this._baibaokuBridge = bridge;
 
                 const available = typeof bridge.isAvailable === 'function'
                     ? await bridge.isAvailable()
@@ -3658,6 +3667,104 @@ export class VectorManager {
         });
 
         return this._baibaokuBridgePromise;
+    }
+
+    async _getBaiBaoKuBackendBridge() {
+        if (this._baibaokuBackendBridge) return this._baibaokuBackendBridge;
+
+        try {
+            const status = await this._baibaokuBackendStatus({ force: true });
+            if (!status?.driver?.available) {
+                return null;
+            }
+
+            this._baibaokuBackendBridge = Object.freeze({
+                id: 'baibaoku',
+                name: '柏宝库',
+                frontendLoaded: false,
+                baseUrl: BAIBAOKU_API_BASE,
+                status: options => this._baibaokuBackendStatus(options),
+                isAvailable: async options => {
+                    try {
+                        const info = await this._baibaokuBackendStatus(options);
+                        return Boolean(info?.driver?.available);
+                    } catch (_) {
+                        return false;
+                    }
+                },
+                request: (action, body = {}) => this._baibaokuBackendRequest(action, body),
+            });
+            console.log('[Horae Vector] 柏宝库前端 bridge 未加载，已改用后端接口直连');
+            return this._baibaokuBackendBridge;
+        } catch (err) {
+            console.warn('[Horae Vector] 柏宝库后端接口探测失败:', err?.message || err);
+            return null;
+        }
+    }
+
+    async _baibaokuBackendStatus(options = {}) {
+        if (!options?.force && this._baibaokuBackendStatusPromise) return this._baibaokuBackendStatusPromise;
+
+        this._baibaokuBackendStatusPromise = (async () => {
+            const response = await fetch(`${BAIBAOKU_API_BASE}/status`, { method: 'GET' });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || !payload?.ok) {
+                const error = new Error(payload?.error?.message || 'BaiBaoKu status request failed');
+                error.status = response.status;
+                error.code = payload?.error?.code;
+                throw error;
+            }
+            return payload.data;
+        })();
+
+        try {
+            return await this._baibaokuBackendStatusPromise;
+        } finally {
+            this._baibaokuBackendStatusPromise = null;
+        }
+    }
+
+    async _baibaokuBackendRequest(action, body = {}) {
+        const headers = await this._getRequestHeadersSafe();
+        const response = await fetch(`${BAIBAOKU_API_BASE}/${action}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+        });
+
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.ok) {
+            const error = new Error(payload?.error?.message || `BaiBaoKu request failed: ${action}`);
+            error.status = response.status;
+            error.code = payload?.error?.code;
+            error.details = payload?.error?.details;
+            throw error;
+        }
+
+        return payload.data;
+    }
+
+    async _getRequestHeadersSafe() {
+        if (this._requestHeadersPromise) return this._requestHeadersPromise;
+
+        this._requestHeadersPromise = (async () => {
+            try {
+                const mod = await import('/script.js');
+                if (typeof mod.getRequestHeaders === 'function') {
+                    return mod.getRequestHeaders();
+                }
+            } catch (_) {
+                // Fallback for environments where SillyTavern helper imports are unavailable.
+            }
+
+            return { 'Content-Type': 'application/json' };
+        })();
+
+        try {
+            return await this._requestHeadersPromise;
+        } finally {
+            this._requestHeadersPromise = null;
+        }
     }
 
     async _baibaokuRequest(action, body = {}) {
@@ -3731,6 +3838,7 @@ export class VectorManager {
                     });
                 }
                 this._storageBackend = 'baibaoku';
+                this._logStorageBackend('向量索引写入使用');
                 return;
             } catch (err) {
                 this._baibaokuReady = false;
@@ -3746,6 +3854,7 @@ export class VectorManager {
             });
         }
         this._storageBackend = 'indexeddb';
+        this._logStorageBackend('向量索引写入使用');
     }
 
     async _buildVectorCacheKey(document) {
@@ -3767,15 +3876,23 @@ export class VectorManager {
 
     async _stableHash(text) {
         const input = String(text ?? '');
-        if (globalThis.crypto?.subtle && globalThis.TextEncoder) {
-            const bytes = new TextEncoder().encode(input);
-            const digest = await crypto.subtle.digest('SHA-256', bytes);
-            return [...new Uint8Array(digest)]
-                .map(byte => byte.toString(16).padStart(2, '0'))
-                .join('');
+
+        // 使用纯 JS hash，避免 HTTP 移动端缺少 crypto.subtle 时生成另一套缓存 key。
+        let h1 = 0xdeadbeef ^ input.length;
+        let h2 = 0x41c6ce57 ^ input.length;
+
+        for (let i = 0; i < input.length; i++) {
+            const ch = input.charCodeAt(i);
+            h1 = Math.imul(h1 ^ ch, 2654435761);
+            h2 = Math.imul(h2 ^ ch, 1597334677);
         }
 
-        return this._hashString(input);
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+
+        const high = (h2 >>> 0).toString(16).padStart(8, '0');
+        const low = (h1 >>> 0).toString(16).padStart(8, '0');
+        return `${high}${low}`;
     }
 
     _encodeFloat32Base64(vector) {
@@ -3818,6 +3935,20 @@ export class VectorManager {
             bytes[i] = binary.charCodeAt(i);
         }
         return bytes;
+    }
+
+    getStorageBackend() {
+        return this._storageBackend || 'unknown';
+    }
+
+    _logStorageBackend(action = '当前向量索引存储后端') {
+        const backend = this.getStorageBackend();
+        const label = backend === 'baibaoku'
+            ? '柏宝库 (BaiBaoKu)'
+            : backend === 'indexeddb'
+                ? '浏览器 IndexedDB'
+                : `未知 (${backend})`;
+        console.log(`[Horae Vector] ${action}: ${label}`);
     }
 
     // ========================================

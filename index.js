@@ -15357,10 +15357,26 @@ function _updateVectorStatus() {
         statusEl.textContent = settings.vectorEnabled ? t('vector.modelNotLoaded') : t('vector.disabled');
     }
     if (countEl) {
-        countEl.textContent = vectorManager.vectors.size > 0
-            ? t('ui.vectorIndexCount', { n: vectorManager.vectors.size })
-            : '';
+        const details = [];
+        if (vectorManager.vectors.size > 0) {
+            details.push(t('ui.vectorIndexCount', { n: vectorManager.vectors.size }));
+        }
+        const storageBackend = _getVectorStorageBackendLabel();
+        if (storageBackend) {
+            details.push(t('ui.vectorStorageBackend', { backend: storageBackend }));
+        }
+        countEl.textContent = details.join(' ');
     }
+}
+
+function _getVectorStorageBackendLabel() {
+    const backend = typeof vectorManager.getStorageBackend === 'function'
+        ? vectorManager.getStorageBackend()
+        : (vectorManager._storageBackend || 'unknown');
+    if (backend === 'baibaoku') return t('ui.vectorStorageBaibaoku');
+    if (backend === 'indexeddb') return t('ui.vectorStorageIndexedDB');
+    if (settings.vectorEnabled) return t('ui.vectorStorageUnknown');
+    return '';
 }
 
 /** 计算当前聊天中缺失/过期的向量索引数量（仅统计可索引消息） */
