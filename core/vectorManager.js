@@ -3,8 +3,8 @@
  * 基于 Transformers.js 的本地向量检索系统
  *
  * 当前聊天的 messageIndex -> vector 只存在内存中。
- * 持久化层优先使用柏宝库全局向量缓存：modelName + document -> float32 vector。
- * IndexedDB 仅作为柏宝库不可用时的兼容 fallback。
+ * 持久化层：IndexedDB 作为本地一级缓存（快速），柏宝库作为跨设备同步层。
+ * 进入聊天优先读 IndexedDB，缺失条目再从柏宝库补全并回写本地。
  */
 
 import { calculateDetailedRelativeTime, getRelativeTimeMeta } from '../utils/timeUtils.js';
@@ -245,10 +245,56 @@ export class VectorManager {
         if (!chatId) return;
 
         try {
-            const loadedFromBaiBaoKu = await this._loadChatFromBaiBaoKu(chat);
-            if (!loadedFromBaiBaoKu) {
+            // Phase 1: 优先从 IndexedDB 本地缓存加载（零网络延迟）
+            try {
                 await this._loadChatFromIndexedDB(chat);
+            } catch (err) {
+                console.warn('[Horae Vector] IndexedDB 本地缓存读取失败，将尝试柏宝库:', err?.message || err);
             }
+            const localCount = this.vectors.size;
+
+            // Phase 2: 只对 IndexedDB 中缺失的向量请求柏宝库补全
+            if (await this._ensureBaiBaoKuReady()) {
+                const tasks = await this._collectVectorTasks(chat);
+                const loadedIndices = new Set(this.vectors.keys());
+                const missingTasks = tasks.filter(t => !loadedIndices.has(t.messageIndex));
+
+                if (missingTasks.length > 0) {
+                    const cached = await this._loadCachedVectors(missingTasks);
+                    if (this._baibaokuReady !== false) {
+                        const newItems = [];
+                        for (const task of missingTasks) {
+                            const vector = cached.get(task.cacheKey);
+                            if (!vector) continue;
+                            this._setMemoryVector(task.messageIndex, {
+                                vector,
+                                hash: task.hash,
+                                document: task.document,
+                            });
+                            newItems.push({ ...task, vector });
+                        }
+                        if (newItems.length > 0) {
+                            this._storageBackend = 'baibaoku';
+                            // 回写 IndexedDB 本地缓存，下次进入就是纯本地命中
+                            try {
+                                await this._saveIndexedDBVectors(newItems);
+                            } catch (err) {
+                                console.warn('[Horae Vector] 回写 IndexedDB 本地缓存失败:', err?.message || err);
+                            }
+                            console.log(`[Horae Vector] 从柏宝库补充了 ${newItems.length} 条缺失向量，已回写本地缓存`);
+                        }
+                    }
+                } else if (localCount > 0) {
+                    this._storageBackend = 'indexeddb';
+                    console.log(`[Horae Vector] IndexedDB 本地缓存完整 (${localCount} 条)，跳过柏宝库网络请求`);
+                } else {
+                    this._storageBackend = 'baibaoku';
+                    console.log('[Horae Vector] 本地无缓存，柏宝库也无匹配向量（可能是新聊天）');
+                }
+            } else {
+                this._storageBackend = 'indexeddb';
+            }
+
             this._logStorageBackend('聊天索引加载使用');
         } catch (err) {
             console.warn('[Horae Vector] 加载向量索引失败:', err);
@@ -441,39 +487,6 @@ export class VectorManager {
         if (this.chatId) await this._clearVectors();
     }
 
-    async _loadChatFromBaiBaoKu(chat) {
-        if (!await this._ensureBaiBaoKuReady()) return false;
-
-        const tasks = await this._collectVectorTasks(chat);
-        if (tasks.length === 0) {
-            this._storageBackend = 'baibaoku';
-            console.log(`[Horae Vector] 柏宝库缓存可用，当前聊天无可加载向量 (chatId: ${this.chatId})`);
-            return true;
-        }
-
-        const cached = await this._loadCachedVectors(tasks);
-        if (this._baibaokuReady === false) {
-            this.vectors.clear();
-            this.termCounts.clear();
-            this.totalDocuments = 0;
-            return false;
-        }
-
-        for (const task of tasks) {
-            const vector = cached.get(task.cacheKey);
-            if (!vector) continue;
-            this._setMemoryVector(task.messageIndex, {
-                vector,
-                hash: task.hash,
-                document: task.document,
-            });
-        }
-
-        this._storageBackend = 'baibaoku';
-        console.log(`[Horae Vector] 已从柏宝库全局缓存加载 ${this.vectors.size}/${tasks.length} 条向量 (chatId: ${this.chatId})`);
-        return true;
-    }
-
     async _loadChatFromIndexedDB(chat) {
         this._storageBackend = 'indexeddb';
         await this._openDB();
@@ -501,7 +514,7 @@ export class VectorManager {
             for (const idx of staleKeys) await this._deleteIndexedDBVector(idx);
             console.log(`[Horae Vector] 清理了 ${staleKeys.length} 条过期/分支外 IndexedDB 向量`);
         }
-        console.log(`[Horae Vector] 已从 IndexedDB fallback 加载 ${this.vectors.size} 条向量 (chatId: ${this.chatId})`);
+        console.log(`[Horae Vector] 已从 IndexedDB 本地缓存加载 ${this.vectors.size} 条向量 (chatId: ${this.chatId})`);
     }
 
     async _collectVectorTasks(chat) {
@@ -3818,6 +3831,14 @@ export class VectorManager {
     async _saveVectors(items) {
         if (!items?.length) return;
 
+        // Always save to IndexedDB local cache first (fast retrieval on next visit)
+        try {
+            await this._saveIndexedDBVectors(items);
+        } catch (err) {
+            console.warn('[Horae Vector] IndexedDB 本地缓存写入失败:', err?.message || err);
+        }
+
+        // Then try Baibaoku for cross-device sync (best-effort, failure does not block)
         if (await this._ensureBaiBaoKuReady()) {
             try {
                 const unique = new Map();
@@ -3837,23 +3858,12 @@ export class VectorManager {
                         entries: entries.slice(offset, offset + BAIBAOKU_BATCH_LIMIT),
                     });
                 }
-                this._storageBackend = 'baibaoku';
-                this._logStorageBackend('向量索引写入使用');
-                return;
             } catch (err) {
                 this._baibaokuReady = false;
-                console.warn('[Horae Vector] 写入柏宝库向量缓存失败，回退 IndexedDB:', err?.message || err);
+                console.warn('[Horae Vector] 写入柏宝库失败 (本地已保存):', err?.message || err);
             }
         }
 
-        for (const item of items) {
-            await this._saveIndexedDBVector(item.messageIndex, {
-                vector: item.vector,
-                hash: item.hash,
-                document: item.document,
-            });
-        }
-        this._storageBackend = 'indexeddb';
         this._logStorageBackend('向量索引写入使用');
     }
 
@@ -4082,6 +4092,35 @@ export class VectorManager {
         });
     }
 
+    /**
+     * 批量写入 IndexedDB（单事务），避免逐条开启事务的性能开销。
+     */
+    async _saveIndexedDBVectors(items) {
+        if (!items?.length) return;
+        await this._openDB();
+
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+
+            for (const item of items) {
+                if (item?.messageIndex == null || !item.vector) continue;
+                const key = `${this.chatId}_${item.messageIndex}`;
+                store.put({
+                    key,
+                    chatId: this.chatId,
+                    messageIndex: item.messageIndex,
+                    vector: item.vector,
+                    hash: item.hash || '',
+                    document: item.document || '',
+                });
+            }
+
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
     async _loadAllVectors() {
         await this._openDB();
         return new Promise((resolve, reject) => {
@@ -4094,10 +4133,7 @@ export class VectorManager {
     }
 
     async _deleteVector(messageIndex) {
-        if (this._storageBackend !== 'indexeddb') {
-            return;
-        }
-
+        // IndexedDB 始终作为本地一级缓存，无论 _storageBackend 标签如何都必须清理
         await this._deleteIndexedDBVector(messageIndex);
     }
 
@@ -4113,10 +4149,7 @@ export class VectorManager {
     }
 
     async _clearVectors() {
-        if (this._storageBackend !== 'indexeddb') {
-            return;
-        }
-
+        // IndexedDB 始终作为本地一级缓存，无论 _storageBackend 标签如何都必须清理
         await this._openDB();
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(STORE_NAME, 'readwrite');
