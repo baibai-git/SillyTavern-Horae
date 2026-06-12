@@ -21178,8 +21178,26 @@ function _replaceRecentSplitMarker(promptChat, replacementText = '') {
         if (!row.content.includes(HORAE_RECENT_SPLIT_MARKER)) continue;
 
         const nextText = typeof replacementText === 'string' ? replacementText.trim() : '';
-        if (nextText) {
-            promptChat[i].content = nextText;
+        const lines = row.content.split('\n');
+        const nextLines = [];
+        for (const line of lines) {
+            if (!line.includes(HORAE_RECENT_SPLIT_MARKER)) {
+                nextLines.push(line);
+                continue;
+            }
+
+            // SillyTavern merges same-depth system prompts; only touch Horae's marker.
+            if (!nextText && line.trim() === HORAE_RECENT_SPLIT_MARKER) continue;
+            if (line.trim() === HORAE_RECENT_SPLIT_MARKER) {
+                nextLines.push(nextText);
+            } else {
+                nextLines.push(line.split(HORAE_RECENT_SPLIT_MARKER).join(nextText));
+            }
+        }
+
+        const nextContent = nextLines.join('\n').trim();
+        if (nextContent) {
+            promptChat[i].content = nextContent;
         } else {
             promptChat.splice(i, 1);
         }
