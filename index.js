@@ -4,7 +4,7 @@
  *
  * 作者: 柏柏
  * 基于 SenriYuki 开发的 Horae 时光记忆进行功能增强与重构
- * 版本: 1.15.4B
+ * 版本: 1.15.5B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -18,7 +18,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.4B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.5B';
 
 // ============================================
 // 常量定义
@@ -26,7 +26,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.15.4B';
+const VERSION = '1.15.5B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -2559,9 +2559,12 @@ async function toggleSummaryActive(summaryId) {
     const entry = sums.find(s => s.id === summaryId);
     if (!entry) return;
     entry.active = !entry.active;
-    // 同步消息可见性：active=摘要模式→隐藏原消息，inactive=原始模式→显示原消息
-    const indices = getSummaryMsgIndices(entry);
-    await setMessagesHidden(chat, indices, entry.active);
+    // active=false 只在时间线中展开原始事件，不再取消隐藏聊天楼层。
+    // 回到摘要模式时仍补一次隐藏，兼容旧版本已经被展开过的楼层。
+    if (entry.active) {
+        const indices = getSummaryMsgIndices(entry);
+        await setMessagesHidden(chat, indices, true);
+    }
     await getContext().saveChat();
     updateTimelineDisplay();
 }
