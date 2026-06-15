@@ -1213,7 +1213,7 @@
         "diceCount": "数量",
         "diceMod": "加值",
         "diceInject": "注入聊天栏",
-        "noSpecialEvents": "无特殊事件",
+        "noSpecialEvents": "发送新消息后自动补全",
         "themeDesignerTitle": "自助美化工具",
         "hue": "主题色相",
         "saturation": "饱和度",

@@ -328,7 +328,7 @@ const defaultLabels = {
   atmosphere: '氛围',
   characters: '在场',
   event: '事件',
-  noSpecialEvents: '无特殊事件',
+  noSpecialEvents: '发送新消息后自动补全',
   eventPlaceholder: '事件摘要',
   levelNone: '无',
   levelNormal: '一般',
