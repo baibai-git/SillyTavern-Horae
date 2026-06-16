@@ -20045,8 +20045,7 @@ async function analyzeMessageWithAI(messageContent, opts = {}) {
     let contextText = '';
     let previousUserMessage = '';
     let analysisSkipLast = 0;
-
-    if (typeof messageIndex === 'number' && messageIndex >= 0) {
+    if (messageIndex >= 0) {
         const chat = horaeManager.getChat();
         if (chat?.length) {
             analysisSkipLast = Math.max(0, chat.length - messageIndex);
