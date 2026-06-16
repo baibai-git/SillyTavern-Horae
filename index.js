@@ -4,7 +4,7 @@
  *
  * 作者: 柏柏
  * 基于 SenriYuki 开发的 Horae 时光记忆进行功能增强与重构
- * 版本: 1.15.5B
+ * 版本: 1.15.6B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -18,7 +18,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.5B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.6B';
 
 // ============================================
 // 常量定义
@@ -26,7 +26,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.15.5B';
+const VERSION = '1.15.6B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -18058,6 +18058,10 @@ function estimateTokens(text) {
 /** 根据 vectorStripTags 配置的标签列表，整块移除对应内容（小剧场等），避免污染 AI 摘要/解析 */
 function _stripConfiguredTags(text) {
     if (!text) return text;
+    text = text.replace(
+        /([\s\S]*<\/endTime>)([\s\S]+)/i,
+        "$1"
+    );
     const tagList = settings.vectorStripTags;
     if (!tagList) return text;
     const tags = tagList.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
@@ -18070,6 +18074,10 @@ function _stripConfiguredTags(text) {
 
 function _stripHoraeReplyTags(text) {
     if (!text) return text;
+    text = text.replace(
+        /([\s\S]*<\/endTime>)([\s\S]+)/i,
+        "$1"
+    );
     return String(text)
         .replace(/<horae>[\s\S]*?<\/horae>/gi, '')
         .replace(/<horaeevent>[\s\S]*?<\/horaeevent>/gi, '')
