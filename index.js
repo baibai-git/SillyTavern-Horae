@@ -4,11 +4,11 @@
  *
  * 作者: 柏柏
  * 基于 SenriYuki 开发的 Horae 时光记忆进行功能增强与重构
- * 版本: 1.15.6B
+ * 版本: 1.15.7B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
-import { getSlideToggleOptions, saveSettingsDebounced, eventSource, event_types, doNewChat } from '/script.js';
+import { getSlideToggleOptions, saveSettingsDebounced, eventSource, event_types, doNewChat, getRequestHeaders } from '/script.js';
 import { slideToggle } from '/lib.js';
 
 import { horaeManager, createEmptyMeta, getItemBaseName } from './core/horaeManager.js';
@@ -18,7 +18,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.6B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.7B';
 
 // ============================================
 // 常量定义
@@ -26,7 +26,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.15.6B';
+const VERSION = '1.15.7B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -16589,6 +16589,26 @@ function _buildEmbeddingRequest(rawUrl, apiKey, model, texts) {
     };
 }
 
+function _normalizeOpenAiCompatibleBaseUrl(rawUrl, defaultVersion = 'v1') {
+    let base = String(rawUrl || '')
+        .trim()
+        .replace(/\/+$/, '')
+        .replace(/\/chat\/completions$/i, '')
+        .replace(/\/models$/i, '')
+        .replace(/\/embeddings$/i, '');
+    if (!base) return '';
+    if (!/\/v\d+(?:[._-]?\d+)*(?:beta\d*|alpha\d*)?$/i.test(base)) {
+        base = `${base}/${String(defaultVersion || 'v1').replace(/^\/+/, '')}`;
+    }
+    return base;
+}
+
+function _buildOpenAiCompatibleChatUrl(rawUrl) {
+    const trimmed = String(rawUrl || '').trim().replace(/\/+$/, '');
+    if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
+    return `${_normalizeOpenAiCompatibleBaseUrl(trimmed)}/chat/completions`;
+}
+
 /** 通用：从端点拉取模型列表 */
 async function _fetchModelList(rawUrl, apiKey, purpose = 'any') {
     if (!rawUrl || !apiKey) throw new Error('请先填写 API 地址和密钥');
@@ -16625,8 +16645,7 @@ async function _fetchModelList(rawUrl, apiKey, purpose = 'any') {
             .filter(Boolean);
     }
 
-    let base = rawUrl.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '').replace(/\/embeddings$/i, '');
-    if (!base.endsWith('/v1')) base = base.replace(/\/+$/, '') + '/v1';
+    const base = _normalizeOpenAiCompatibleBaseUrl(rawUrl);
     const testUrl = `${base}/models`;
     const resp = await fetch(testUrl, {
         method: 'GET',
@@ -16662,6 +16681,33 @@ function _populateModelSelect(sel, models, prev = '') {
         opt.selected = true;
         sel.prepend(opt);
     }
+}
+
+async function _fetchOpenAiCompatibleModelsViaStBackend(rawUrl, apiKey) {
+    const base = _normalizeOpenAiCompatibleBaseUrl(rawUrl);
+    const resp = await fetch('/api/backends/chat-completions/status', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            reverse_proxy: base,
+            proxy_password: apiKey,
+            chat_completion_source: 'openai',
+        }),
+        cache: 'no-cache',
+        signal: AbortSignal.timeout(20000),
+    });
+    if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(`${resp.status}: ${errText.slice(0, 150) || resp.statusText}`);
+    }
+    const json = await resp.json();
+    if (json?.error) {
+        const upstream = json?.data?.error?.message || json?.data?.message || json?.message || '';
+        throw new Error(upstream || '模型列表拉取失败');
+    }
+    return (json?.data || [])
+        .map(m => String(m?.id || m?.name || '').trim())
+        .filter(Boolean);
 }
 
 /** 拉取 Embedding 模型列表并填充 <select> */
@@ -16810,10 +16856,7 @@ async function _fetchSubApiModels(source = null) {
         headers = { 'Content-Type': 'application/json' };
         if (!isGoogle) headers['Authorization'] = `Bearer ${apiKey}`;
     } else {
-        let base = rawUrl.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
-        if (!base.endsWith('/v1')) base = base.replace(/\/+$/, '') + '/v1';
-        testUrl = `${base}/models`;
-        headers = { 'Authorization': `Bearer ${apiKey}` };
+        return _fetchOpenAiCompatibleModelsViaStBackend(rawUrl, apiKey);
     }
     const resp = await fetch(testUrl, { method: 'GET', headers, signal: AbortSignal.timeout(15000) });
     if (!resp.ok) {
@@ -16857,6 +16900,54 @@ async function fetchAndPopulateModels() {
     }
 }
 
+async function _testSubApiChatCompletion(form) {
+    const rawUrl = String(form.url || '').trim();
+    const apiKey = String(form.key || '').trim();
+    const model = String(form.model || '').trim();
+    if (!rawUrl || !apiKey || !model) {
+        throw new Error(t('toast.subApiChannelRequired') || '请填写 API 地址、密钥和模型');
+    }
+
+    const baseUrl = _normalizeOpenAiCompatibleBaseUrl(rawUrl);
+    if (window.TavernHelper?.generateRaw) {
+        await window.TavernHelper.generateRaw({
+            user_input: 'ping',
+            custom_api: {
+                apiurl: baseUrl,
+                key: apiKey,
+                model,
+                source: 'openai',
+                max_tokens: 1,
+                temperature: 0,
+            },
+            ordered_prompts: ['user_input'],
+            should_stream: false,
+            should_silence: true,
+        });
+        return;
+    }
+
+    const resp = await _corsAwareFetch(_buildOpenAiCompatibleChatUrl(rawUrl), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: 'ping' }],
+            temperature: 0,
+            max_tokens: 1,
+            stream: false,
+        }),
+        signal: AbortSignal.timeout(20000),
+    });
+    if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(`${resp.status}: ${errText.slice(0, 150)}`);
+    }
+}
+
 /** 测试副API连接 */
 async function testSubApiConnection() {
     const btn = document.getElementById('horae-btn-test-sub-api');
@@ -16864,11 +16955,27 @@ async function testSubApiConnection() {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...'; }
     try {
         const form = _getSubApiFormData();
-        const models = await _fetchSubApiModels(form);
+        await _testSubApiChatCompletion(form);
+        let models = [];
+        try {
+            models = await _fetchSubApiModels(form);
+            const modelInput = document.getElementById('horae-setting-auto-summary-model');
+            _populateModelSelect(modelInput, models, form.model);
+        } catch (modelErr) {
+            console.warn('[Horae] 副API /models 不可用，已跳过模型列表校验:', modelErr);
+        }
         const model = String(form.model || '').trim();
-        const matchStr = model && models.some(m => m && m.toLowerCase().includes(model.toLowerCase()))
-            ? t('toast.subApiMatchFound', { model }) : (model ? t('toast.subApiMatchNotFound', { model }) : '');
-        showToast(t('toast.subApiTestSuccess', { n: models.length, match: matchStr }), 'success');
+        const matchStr = models.length && model && models.some(m => m && m.toLowerCase().includes(model.toLowerCase()))
+            ? t('toast.subApiMatchFound', { model }) : '';
+        const noModelsSuccess = t('toast.subApiTestSuccessNoModels');
+        showToast(
+            models.length
+                ? t('toast.subApiTestSuccess', { n: models.length, match: matchStr })
+                : (noModelsSuccess && noModelsSuccess !== 'toast.subApiTestSuccessNoModels'
+                    ? noModelsSuccess
+                    : '副API连接成功！（该端点未返回模型列表，可手动填写模型 ID）'),
+            'success'
+        );
     } catch (err) {
         showToast(t('toast.subApiTestFailed', { error: err.message || err }), 'error');
     } finally {
@@ -16990,11 +17097,7 @@ async function generateWithDirectApi(prompt, options = {}) {
     if (/gemini/i.test(_model)) {
         // return await _geminiNativeRequest(prompt, String(channel?.url || settings.autoSummaryApiUrl || '').trim(), _model, _apiKey);
     }
-    let url = String(channel?.url || settings.autoSummaryApiUrl || '').trim();
-    if (!url.endsWith('/chat/completions')) {
-        // url = url.replace(/\/+$/, '') + '/chat/completions';
-        url = url.replace(/\/+$/, '');
-    }
+    let url = _normalizeOpenAiCompatibleBaseUrl(channel?.url || settings.autoSummaryApiUrl);
     const customPromptInjection = _getCustomPromptInjectionParts(taskType, options);
     const messages = await _buildSummaryMessages(prompt, { taskType, ...options });
     const body = {
@@ -17160,7 +17263,7 @@ event 唯一且只放在 <horaeevent> 内。
         const resp = await TavernHelper.generateRaw({
             user_input: guardedUserInput,
             custom_api: {
-                apiurl: url,        // 你的接口地址 仅v1结尾,不能带后缀
+                apiurl: url,        // OpenAI 兼容基础地址，如 /v1 或 /api/v3，不能带 /chat/completions
                 key: _apiKey,       // 你的 API Key
                 model: _model,      // 模型名
                 source: "openai",   // 根据你的接口类型选择
