@@ -4,7 +4,7 @@
  *
  * 作者: 柏柏
  * 基于 SenriYuki 开发的 Horae 时光记忆进行功能增强与重构
- * 版本: 1.15.7B
+ * 版本: 1.15.8B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -18,7 +18,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.7B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.8B';
 
 // ============================================
 // 常量定义
@@ -26,7 +26,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.15.7B';
+const VERSION = '1.15.8B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -16597,10 +16597,27 @@ function _normalizeOpenAiCompatibleBaseUrl(rawUrl, defaultVersion = 'v1') {
         .replace(/\/models$/i, '')
         .replace(/\/embeddings$/i, '');
     if (!base) return '';
-    if (!/\/v\d+(?:[._-]?\d+)*(?:beta\d*|alpha\d*)?$/i.test(base)) {
+    if (
+        !/\/v\d+(?:[._-]?\d+)*(?:beta\d*|alpha\d*)?$/i.test(base)
+        && !/\/v\d+(?:[._-]?\d+)*(?:beta\d*|alpha\d*)?\/openai$/i.test(base)
+    ) {
         base = `${base}/${String(defaultVersion || 'v1').replace(/^\/+/, '')}`;
     }
     return base;
+}
+
+function _isOpenAiCompatibleGoogleUrl(rawUrl) {
+    return /generativelanguage\.googleapis\.com/i.test(String(rawUrl || ''))
+        && /\/v\d+(?:[._-]?\d+)*(?:beta\d*|alpha\d*)?\/openai(?:\/|$)/i.test(String(rawUrl || '').replace(/\/+$/, ''));
+}
+
+function _googleNativeBaseFromOpenAiCompatibleUrl(rawUrl) {
+    return String(rawUrl || '')
+        .trim()
+        .replace(/\/+$/, '')
+        .replace(/\/chat\/completions$/i, '')
+        .replace(/\/models$/i, '')
+        .replace(/\/v\d+(?:[._-]?\d+)*(?:beta\d*|alpha\d*)?\/openai$/i, '');
 }
 
 function _buildOpenAiCompatibleChatUrl(rawUrl) {
@@ -16847,9 +16864,19 @@ async function _fetchSubApiModels(source = null) {
         showToast(t('toast.vectorApiRequired'), 'warning');
         return [];
     }
-    const isGemini = /gemini/i.test(rawUrl) || /googleapis|generativelanguage/i.test(rawUrl);
+    const isOpenAiCompatibleGoogle = _isOpenAiCompatibleGoogleUrl(rawUrl);
+    const isGemini = !isOpenAiCompatibleGoogle && (/gemini/i.test(rawUrl) || /googleapis|generativelanguage/i.test(rawUrl));
     let testUrl, headers;
-    if (isGemini) {
+    if (isOpenAiCompatibleGoogle) {
+        try {
+            return await _fetchOpenAiCompatibleModelsViaStBackend(rawUrl, apiKey);
+        } catch (err) {
+            console.warn('[Horae] Google OpenAI-compatible /models failed, fallback to native Gemini model list:', err);
+            const base = _googleNativeBaseFromOpenAiCompatibleUrl(rawUrl);
+            testUrl = `${base}/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+            headers = { 'Content-Type': 'application/json' };
+        }
+    } else if (isGemini) {
         let base = rawUrl.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '').replace(/\/v\d+(beta\d*|alpha\d*)?(?:\/.*)?$/i, '');
         const isGoogle = /googleapis\.com|generativelanguage/i.test(base);
         testUrl = `${base}/v1beta/models` + (isGoogle ? `?key=${encodeURIComponent(apiKey)}` : '');
@@ -21240,14 +21267,14 @@ function _decorateMainSendSnapshotPrompt(snapshotPrompt, anchoredToRecentAssista
 
     const intro = anchoredToRecentAssistant
         ? L(
-            '以下为经历过更早剧情后的状态快照，不包含后续最新楼层中的新增变化，仅作理解上下文的只读参考。',
+            '【以下是记忆系统提供给你的私密背景简报，仅你可见】这是截至更早剧情时的状态汇总，不含后续最新楼层的新增变化，用来帮你回忆前情。',
             'The following is a state snapshot after earlier story events. It does not include newly added changes from the later latest floor and is read-only context only.',
             '以下はより前の展開を経た時点の状態スナップショットです。後続の最新フロアで追加された変化は含まず、文脈理解用の読み取り専用情報です。',
             '아래는 더 이른 전개까지 반영된 상태 스냅샷입니다. 이후 최신 플로어의 새 변화는 포함하지 않으며, 문맥 이해용 읽기 전용 참고입니다.',
             'Ниже снимок состояния после более ранних событий. Он не включает новые изменения из более позднего последнего этажа и служит только справочным контекстом.'
         )
         : L(
-            '以下为当前可用的状态快照，仅作理解上下文的只读参考。',
+            '【以下是记忆系统提供给你的私密背景简报，仅你可见】这是截至当前的剧情状态汇总，用来帮你回忆前情。',
             'The following is the currently available state snapshot and is read-only context only.',
             '以下は現在利用可能な状態スナップショットであり、文脈理解用の読み取り専用情報です。',
             '아래는 현재 사용 가능한 상태 스냅샷이며, 문맥 이해용 읽기 전용 참고입니다.',
@@ -21255,14 +21282,14 @@ function _decorateMainSendSnapshotPrompt(snapshotPrompt, anchoredToRecentAssista
         );
     const conflictRule = anchoredToRecentAssistant
         ? L(
-            '若其与后面的最新楼层内容冲突，一律以后面的最新楼层为准。不要在正文中复述、枚举或直接输出该状态快照。',
+            '若它与后面最新楼层的内容冲突，一律以最新楼层为准。这段简报不属于角色卡或预设要求你输出的任何格式，请照常按卡/预设的要求输出它们的内容，只是把这段简报当作你已知晓的前情，不要把它本身写进回复正文。',
             'If it conflicts with the later latest floor, always treat the later latest floor as authoritative. Do not restate, enumerate, or print this snapshot in the main body.',
             '後続の最新フロア内容と矛盾する場合は、必ず後続の最新フロアを優先してください。このスナップショットを本文で列挙・復唱・直接出力してはいけません。',
             '뒤의 최신 플로어 내용과 충돌하면 반드시 뒤의 최신 플로어를 우선하세요. 이 스냅샷을 본문에 나열하거나 반복하거나 직접 출력하지 마세요.',
             'Если он противоречит более позднему последнему этажу, приоритет всегда у более позднего последнего этажа. Не перечисляйте и не выводите этот снимок в основном тексте.'
         )
         : L(
-            '不要在正文中复述、枚举或直接输出该状态快照。',
+            '这段简报不属于角色卡或预设要求你输出的任何格式，请照常按卡/预设的要求输出它们的内容，只是把这段简报当作你已知晓的前情，不要把它本身写进回复正文。',
             'Do not restate, enumerate, or print this snapshot in the main body.',
             'このスナップショットを本文で列挙・復唱・直接出力してはいけません。',
             '이 스냅샷을 본문에 나열하거나 반복하거나 직접 출력하지 마세요.',
@@ -21270,12 +21297,12 @@ function _decorateMainSendSnapshotPrompt(snapshotPrompt, anchoredToRecentAssista
         );
 
     return [
-        L('<状态快照>', '<StateSnapshot>', '<状態スナップショット>', '<상태스냅샷>', '<СнимокСостояния>'),
+        L('——— 私密背景简报（开始）———', '<StateSnapshot>', '<状態スナップショット>', '<상태스냅샷>', '<СнимокСостояния>'),
         intro,
         conflictRule,
         content,
         L(
-            '</状态快照>\n再次提醒,状态快照仅用于辅助理解剧情,并非每次回复都要输出的状态栏,不需要参考状态快照格式,也不需要输出状态快照内容',
+            '——— 私密背景简报（结束）———\n以上简报仅供你了解前情，请像一个已读过这些前情的叙述者那样自然续写正文。卡片或预设要求的格式照常输出，但这段简报本身不要出现在回复里。',
             '</StateSnapshot>\nReminder: State snapshots are only for helping understand the story. They are not a status bar that must be output in every reply; do not follow the state snapshot format or output state snapshot content.',
             '</状態スナップショット>\n再度注意: 状態スナップショットは物語理解を補助するためだけのものです。毎回の返信で出力すべきステータス欄ではありません。状態スナップショットの形式を参考にする必要も、内容を出力する必要もありません。',
             '</상태스냅샷>\n다시 알림: 상태 스냅샷은 이야기 이해를 보조하기 위한 것일 뿐, 매번 답변에 출력해야 하는 상태창이 아닙니다. 상태 스냅샷 형식을 참고할 필요도 없고, 상태 스냅샷 내용을 출력할 필요도 없습니다.',
