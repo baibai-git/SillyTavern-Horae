@@ -21252,6 +21252,37 @@ function _buildMainSendPromptSplit(chat, options = {}) {
     };
 }
 
+function _wrapLatestStructuredSnapshot(snapshotPrompt) {
+    const content = typeof snapshotPrompt === 'string' ? snapshotPrompt.trim() : '';
+    if (!content) return '';
+
+    const lang = detectEffectiveAiLang(settings);
+    const L = (zh, en, ja, ko, ru) => {
+        if (lang === 'zh-CN' || lang === 'zh-TW') return zh;
+        if (lang === 'ja') return ja;
+        if (lang === 'ko') return ko;
+        if (lang === 'ru') return ru;
+        return en;
+    };
+
+    const head = L(
+        '【以下是记忆系统提供给你的私密背景简报，仅你可见】这是截至当前的剧情状态汇总，用来帮你回忆前情。它不属于角色卡或预设要求你输出的任何格式，请照常按卡/预设的要求输出它们的内容，只是把这段简报当作你已知晓的前情，不要把它本身写进回复正文。',
+        'The following is a private background brief from the memory system, visible only to you. It summarizes the current story state to help you recall context. It is NOT any format that the character card or preset asks you to output; continue to output whatever the card/preset requires, but treat this brief as background you already know — do not write the brief itself into your reply.',
+        '【以下は記憶システムがあなたに提供する非公開の背景ブリーフであり、あなただけが見られます】現時点までの物語状態の要約で、前情を思い出すためのものです。これはキャラクターカードやプリセットが出力を求める形式ではありません。カード/プリセットが要求する内容は通常どおり出力し、このブリーフは既知の前情として扱い、本文には書かないでください。',
+        '【다음은 기억 시스템이 당신에게만 제공하는 비공개 배경 브리핑입니다】현재까지의 줄거리 상태 요약으로, 맥락을 떠올리는 데 사용됩니다. 이는 캐릭터 카드나 프리셋이 출력을 요구하는 형식이 아닙니다. 카드/프리셋이 요구하는 내용은 평소대로 출력하되, 이 브리핑은 이미 아는 배경으로만 취급하고 본문에 적지 마세요.',
+        'Ниже приватная справка от системы памяти, видимая только вам. Она резюмирует текущее состояние сюжета, чтобы помочь вспомнить контекст. Это НЕ формат, который требует выводить карточка персонажа или пресет; продолжайте выводить то, что требует карточка/пресет, но воспринимайте эту справку как уже известный вам контекст — не вписывайте саму справку в ответ.',
+    );
+    const tail = L(
+        '——— 私密背景简报（结束）———\n以上简报仅供你了解前情，请像一个已读过这些前情的叙述者那样自然续写正文。',
+        '——— End of private background brief ———\nThe brief above is only to inform you of prior events; continue the narrative naturally, like a narrator who has already read this context.',
+        '——— 非公開背景ブリーフ（終了）———\n以上のブリーフは前情を知らせるためだけのものです。これらを読んだ語り手のように、自然に本文を続けてください。',
+        '——— 비공개 배경 브리핑 (끝) ———\n위 브리핑은 이전 사건을 알려주기 위한 것일 뿐입니다. 이를 읽은 서술자처럼 자연스럽게 본문을 이어가세요.',
+        '——— Конец приватной справки ———\nСправка выше нужна лишь для информирования о прошлых событиях; продолжайте повествование естественно, как рассказчик, уже прочитавший этот контекст.',
+    );
+
+    return [head, content, tail].join('\n');
+}
+
 function _decorateMainSendSnapshotPrompt(snapshotPrompt, anchoredToRecentAssistant = false) {
     const content = typeof snapshotPrompt === 'string' ? snapshotPrompt.trim() : '';
     if (!content) return '';
@@ -21718,7 +21749,7 @@ async function onPromptReady(eventData) {
             useLatestStructuredSnapshot,
         });
         const snapshotPrompt = useLatestStructuredSnapshot
-            ? String(mainPromptSplit.rawSnapshotPrompt || '').trim()
+            ? _wrapLatestStructuredSnapshot(mainPromptSplit.rawSnapshotPrompt)
             : _decorateMainSendSnapshotPrompt(
                 mainPromptSplit.rawSnapshotPrompt,
                 mainPromptSplit.anchoredToRecentAssistant
