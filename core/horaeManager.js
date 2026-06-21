@@ -741,6 +741,44 @@ class HoraeManager {
                         lines.push(`[${L('场景记忆', 'Scene Memory', 'シーン記憶', '장면 기억', 'Память сцены')}:${parent}|${locMem[parent].desc}]`);
                     }
                 }
+
+                // 同区域已有地点（兄弟级）：完善地图 + 避免对同一处重复建条目
+                // 取最近更新的若干兄弟发完整描述，其余兄弟只给名字
+                const SIBLING_SEP = /[·・\-\/\|]/;
+                const matchedName = entry?._matchedName || loc;
+                const matchedSegs = matchedName.split(SIBLING_SEP).map(s => s.trim()).filter(Boolean);
+                const parentPrefix = matchedSegs.slice(0, -1).join('·'); // 顶级地点时为空串
+                const siblingDepth = matchedSegs.length;                 // 当前地点的层级深度
+                const SIBLING_DETAIL_LIMIT = 3;                          // 发完整描述的兄弟上限
+                const SIBLING_NAME_LIMIT = 8;                            // 只给名字的兄弟上限
+                const siblingEntries = [];
+                for (const candName of Object.keys(locMem)) {
+                    if (candName === matchedName) continue;
+                    const info = locMem[candName];
+                    if (!info || info._deleted) continue;
+                    const segs = candName.split(SIBLING_SEP).map(s => s.trim()).filter(Boolean);
+                    if (segs.length !== siblingDepth) continue;          // 只取同层，排除孙辈
+                    const candParent = segs.slice(0, -1).join('·');
+                    if (candParent !== parentPrefix) continue;           // 同父前缀（顶级则同为空串）
+                    siblingEntries.push({ shortName: segs[segs.length - 1], desc: info.desc || '', lastUpdated: info.lastUpdated || '' });
+                }
+                if (siblingEntries.length > 0) {
+                    // 最近更新优先
+                    siblingEntries.sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)));
+                    const detailed = siblingEntries.filter(s => s.desc).slice(0, SIBLING_DETAIL_LIMIT);
+                    const detailedNames = new Set(detailed.map(s => s.shortName));
+                    for (const s of detailed) {
+                        lines.push(`[${L('同区域地点', 'Nearby Location', '近隣地点', '주변 장소', 'Соседнее место')}:${s.shortName}|${s.desc}]`);
+                    }
+                    // 其余兄弟（含无描述的）只列名字，提示已存在、勿重记
+                    const nameOnly = siblingEntries
+                        .filter(s => !detailedNames.has(s.shortName))
+                        .map(s => s.shortName)
+                        .slice(0, SIBLING_NAME_LIMIT);
+                    if (nameOnly.length > 0) {
+                        lines.push(`[${L('同区域其他地点', 'Other Nearby Locations', '同エリアの他地点', '같은 구역 기타 장소', 'Другие места рядом')}|${nameOnly.join('|')}]`);
+                    }
+                }
             }
         }
 
