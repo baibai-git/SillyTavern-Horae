@@ -373,6 +373,8 @@
         "subApiScopeBriefHint": "요약에서 보조 API를 켜면 \"이전 메시지 자동 보완\"도 함께 켜집니다. 새 메시지를 보낼 때 형식 프롬프트가 주입되지 않으므로 요약은 본문과 함께 출력되지 않고, 새 메시지 전송 시 보조 API로 보완됩니다. 층 UI에서 수동으로 실행하는 AI 분석도 동일하게 보조 API를 사용합니다.",
         "subApiScopeSingleAnalysis": "단일 분석",
         "summaryFetchModelsHint": "URL과 키를 입력한 후 클릭하여 가져오세요. 저비용 모델로 충분합니다.",
+        "subApiModelManualPlaceholder": "또는 모델 ID를 직접 입력 (입력 시 이 값 우선)",
+        "subApiModelManualHint": "모델을 가져올 수 없을 때 여기에 모델 이름을 직접 입력할 수 있습니다",
         "testSubApi": "서브 API 연결 테스트",
         "subApiHint": "설정 후 자동 요약이 독립적인 HTTP 요청을 통해 병렬로 생성되며 메인 태번 API에 영향을 주지 않습니다.\n모든 OpenAI 호환 엔드포인트를 지원합니다 (OpenAI, DeepSeek, OpenRouter 등).\n연결 테스트는 모델 목록만 조회하며 생성 크레딧을 소비하지 않습니다.",
         "dataManagement": "데이터 관리",

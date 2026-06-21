@@ -303,6 +303,8 @@
         "subApiMainApi": "Main API (default)",
         "subApiNoModel": "No model set",
         "subApiFetchFirst": "-- Fetch models first --",
+        "subApiModelManualPlaceholder": "Or enter a model ID manually (takes priority if filled)",
+        "subApiModelManualHint": "If models can't be fetched, type the model name here manually",
         "dataManagement": "Data Management",
         "scanTags": "Scan Tags",
         "aiSmartSummary": "AI Smart Summary",

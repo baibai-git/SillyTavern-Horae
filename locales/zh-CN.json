@@ -303,6 +303,8 @@
         "subApiMainApi": "主 API (默认)",
         "subApiNoModel": "未设置模型",
         "subApiFetchFirst": "-- 请先拉取模型列表 --",
+        "subApiModelManualPlaceholder": "或手动输入模型 ID（填此处则以此为准）",
+        "subApiModelManualHint": "无法拉取模型时，可在此手动填写模型名称",
         "dataManagement": "数据管理",
         "scanTags": "扫描标签",
         "aiSmartSummary": "AI 智能补全",

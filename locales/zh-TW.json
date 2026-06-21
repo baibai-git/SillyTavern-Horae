@@ -275,6 +275,8 @@
         "advanced": "進階設置",
         "subApiSection": "副API",
         "subApiSectionHint": "在這裡配置副API的地址、密鑰與模型，用於總結/補全等副任務。",
+        "subApiModelManualPlaceholder": "或手動輸入模型 ID（填此處則以此為準）",
+        "subApiModelManualHint": "無法拉取模型時，可在此手動填寫模型名稱",
         "contextDepth": "上下文深度",
         "contextDepthHint": "控制傳送給AI的\"一般\"級別劇情軌跡數量：\n0 = 不傳送一般事件（重要/關鍵照發）\n15 = 傳送最近15條一般事件（預設）\n數字越大傳送越多，Token消耗越高",
         "injectionPosition": "注入位置",

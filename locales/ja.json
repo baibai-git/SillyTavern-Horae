@@ -375,6 +375,8 @@
         "subApiScopeBriefHint": "摘要で副APIを有効にすると、「前のメッセージを自動補完」も同時に有効になります。新規メッセージ送信時にフォーマット用プロンプトは注入されなくなるため、摘要は本文と同時には出力されず、新規メッセージ送信時に副APIで補完されます。フロア画面で手動実行するAI分析も副APIを使用します。",
         "subApiScopeSingleAnalysis": "単一分析",
         "summaryFetchModelsHint": "URLとキーを入力してからクリックで取得。低コストモデルで十分です。",
+        "subApiModelManualPlaceholder": "またはモデルIDを手動入力（入力した場合はこちらを優先）",
+        "subApiModelManualHint": "モデルを取得できない場合、ここに手動でモデル名を入力できます",
         "testSubApi": "サブAPI接続テスト",
         "subApiHint": "設定すると、自動要約は独立したHTTPリクエストで並列生成され、メインのTavern APIに影響しません。\nすべてのOpenAI互換エンドポイントに対応（OpenAI、DeepSeek、OpenRouterなど）。\n接続テストはモデルリストの照会のみで、生成クレジットは消費されません。",
         "dataManagement": "データ管理",

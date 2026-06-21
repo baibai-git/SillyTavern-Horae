@@ -4,7 +4,7 @@
  *
  * 作者: 柏柏
  * 基于 SenriYuki 开发的 Horae 时光记忆进行功能增强与重构
- * 版本: 1.15.8B
+ * 版本: 1.15.9B
  */
 
 import { renderExtensionTemplateAsync, getContext, extension_settings } from '/scripts/extensions.js';
@@ -18,7 +18,7 @@ import { calculateRelativeTime, calculateDetailedRelativeTime, formatRelativeTim
 import { t, tForLang, initI18n, getLanguage, isZhLocale, setLanguage, detectEffectiveAiLangIsZh, detectEffectiveAiLang } from './core/i18n.js';
 import { initPromptDefaults, ensurePromptDefaults, getPromptDefaultSync } from './core/promptDefaults.js';
 import { installSaveRequestGzipFetchHook } from './utils/saveRequestGzip.js';
-import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.8B';
+import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.js?v=1.15.9B';
 
 // ============================================
 // 常量定义
@@ -26,7 +26,7 @@ import { mountMessagePanel as mountVueMessagePanel } from './dist/messagePanel.j
 const EXTENSION_NAME = 'horae';
 const EXTENSION_FOLDER = `third-party/SillyTavern-Horae`;
 const TEMPLATE_PATH = `${EXTENSION_FOLDER}/assets/templates`;
-const VERSION = '1.15.8B';
+const VERSION = '1.15.9B';
 const DEFAULT_VECTOR_STRIP_TAGS = 'dream_status,Episode,details,think,thinking,Thinking';
 const MESSAGE_PANEL_THEME_TYPE = 'horae-message-panel-theme';
 const MESSAGE_PANEL_THEME_DAY = 'day';
@@ -1309,6 +1309,13 @@ function _setSubApiFormChannel(channel = null) {
             modelSel.innerHTML = `<option value="">${escapeHtml(t('settings.subApiFetchFirst') || '-- 请先拉取模型列表 --')}</option>`;
         }
     }
+    // 手动输入框：若已保存的模型不在拉取列表中，说明是手填的，回显到手填框；否则清空
+    const manualInput = document.getElementById('horae-setting-auto-summary-model-manual');
+    if (manualInput) {
+        const models = Array.isArray(channel?.models) ? channel.models : [];
+        const savedModel = channel?.model || '';
+        manualInput.value = (savedModel && !models.includes(savedModel)) ? savedModel : '';
+    }
     const saveText = document.getElementById('horae-btn-save-sub-api-text');
     if (saveText) saveText.textContent = channel ? (t('settings.subApiSaveEdit') || '保存 API') : (t('settings.subApiSaveAdd') || '保存 / 添加 API');
     const saveIcon = document.querySelector('#horae-btn-save-sub-api i');
@@ -1320,11 +1327,14 @@ function _setSubApiFormChannel(channel = null) {
 }
 
 function _getSubApiFormData() {
+    const manualModel = String($('#horae-setting-auto-summary-model-manual').val() || '').trim();
+    const selectModel = String($('#horae-setting-auto-summary-model').val() || '').trim();
     return {
         name: String($('#horae-setting-sub-api-name').val() || '').trim(),
         url: String($('#horae-setting-auto-summary-api-url').val() || '').trim(),
         key: String($('#horae-setting-auto-summary-api-key').val() || '').trim(),
-        model: String($('#horae-setting-auto-summary-model').val() || '').trim(),
+        // 手动输入优先；为空时回退到下拉选中的模型
+        model: manualModel || selectModel,
     };
 }
 
@@ -14265,7 +14275,14 @@ function initSettingsEvents() {
         }
     });
     $('#horae-setting-auto-summary-model').on('change', function () {
-        settings.autoSummaryModel = this.value;
+        // 仅当未手动输入模型时，下拉选择才生效
+        const manual = String($('#horae-setting-auto-summary-model-manual').val() || '').trim();
+        if (!manual) settings.autoSummaryModel = this.value;
+    });
+    $('#horae-setting-auto-summary-model-manual').on('input', function () {
+        const manual = String(this.value || '').trim();
+        // 手填非空以手填为准；清空后回退到下拉选中的模型
+        settings.autoSummaryModel = manual || String($('#horae-setting-auto-summary-model').val() || '').trim();
     });
     $('#horae-setting-summary-should-stream').on('change', function () {
         settings.summaryShouldStream = this.checked;
